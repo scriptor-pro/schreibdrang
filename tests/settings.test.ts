@@ -18,8 +18,10 @@ test("chaque valeur invalide est remplacée par son défaut, les autres sont gar
   assert.deepEqual(got, { ...DEFAULTS, startup: "dernier" });
 });
 
-test("la taille est ramenée entre 14 et 24, et arrondie", () => {
-  assert.equal(normalizeSettings({ size: 400 }).size, 24);
-  assert.equal(normalizeSettings({ size: 3 }).size, 14);
+test("une taille hors limites donne la taille par défaut, une taille valide est arrondie", () => {
+  assert.equal(normalizeSettings({ size: 400 }).size, 17);
+  assert.equal(normalizeSettings({ size: 3 }).size, 17);
   assert.equal(normalizeSettings({ size: 17.6 }).size, 18);
+  assert.equal(normalizeSettings({ size: 14 }).size, 14);
+  assert.equal(normalizeSettings({ size: 24 }).size, 24);
 });

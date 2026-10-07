@@ -8,7 +8,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { fillIcons } from "./icons";
-import { applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
+import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
 
 // Les réglages s'appliquent avant la création de l'éditeur.
@@ -802,12 +802,16 @@ void openSettings;
 
 settingsForm.addEventListener("change", () => {
   const data = new FormData(settingsForm);
+  // La saisie est ramenée dans les limites ; un champ vide garde la taille actuelle.
+  const typed = data.get("size") === "" ? NaN : Number(data.get("size"));
+  const size = Number.isFinite(typed) ? Math.min(MAX_SIZE, Math.max(MIN_SIZE, typed)) : settings.size;
   settings = normalizeSettings({
     theme: data.get("theme"),
     font: data.get("font"),
-    size: Number(data.get("size")),
+    size,
     startup: data.get("startup"),
   });
+  sizeInput.value = String(settings.size);
   saveSettings(settings);
   applySettings(settings);
   // La police ou la taille ont pu changer : l'éditeur remesure ses lignes.

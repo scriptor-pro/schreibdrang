@@ -24,10 +24,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const data = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const theme = data.theme === "clair" || data.theme === "sombre" ? data.theme : DEFAULTS.theme;
   const font = typeof data.font === "string" ? data.font : DEFAULTS.font;
-  const size =
-    typeof data.size === "number" && Number.isFinite(data.size)
-      ? Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(data.size)))
-      : DEFAULTS.size;
+  const rounded = typeof data.size === "number" ? Math.round(data.size) : NaN;
+  const size = rounded >= MIN_SIZE && rounded <= MAX_SIZE ? rounded : DEFAULTS.size;
   const startup = data.startup === "dernier" ? "dernier" : DEFAULTS.startup;
   return { theme, font, size, startup };
 }
