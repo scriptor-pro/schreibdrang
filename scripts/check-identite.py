@@ -19,12 +19,14 @@ EXPECTED = {
         "ecr-bg": "#FAFAF7", "ecr-ink": "#1C1C1C", "ecr-muted": "#5C5C5C",
         "ecr-hint": "#6B6B6B", "ecr-selection": "#D5DCFA",
         "accent": "#1F3FD1", "on-accent": "#FFFFFF", "error": "#B3261E",
+        "cork": "#C9A878",
     },
     "sombre": {
         "aff-bg": "#000000", "aff-ink": "#FFFFFF", "aff-muted": "#A8A8A3",
         "ecr-bg": "#161616", "ecr-ink": "#E6E6E1", "ecr-muted": "#A8A8A3",
         "ecr-hint": "#959590", "ecr-selection": "#2A3570",
         "accent": "#8296FF", "on-accent": "#111111", "error": "#FF8A80",
+        "cork": "#4A3826",
     },
 }
 
@@ -34,6 +36,8 @@ PAIRS = [
     ("ecr-ink", "ecr-bg"), ("ecr-muted", "ecr-bg"), ("ecr-hint", "ecr-bg"),
     ("accent", "ecr-bg"), ("error", "ecr-bg"),
     ("on-accent", "accent"), ("ecr-ink", "ecr-selection"),
+    # Les titres de chapitre du cork board sont posés sur le liège.
+    ("aff-ink", "cork"),
 ]
 
 TOKEN = re.compile(r"--([a-z-]+):\s*(#[0-9a-fA-F]{6})\b")

@@ -13,6 +13,8 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { fillIcons } from "./icons";
+import { parseDocument, serializeDocument } from "./outline";
+import type { Chapter, Scene } from "./outline";
 import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
 import { addRecent, loadRecents, removeRecent, saveRecents } from "./recents";
@@ -266,59 +268,14 @@ scheduleCounts(view);
 // Cork board : construit à partir du texte, et réécrit le texte à chaque dépôt
 // ---------------------------------------------------------------------------
 
-interface Scene {
-  heading: string;
-  body: string;
-}
-
-interface Chapter {
-  heading: string;
-  scenes: Scene[];
-}
-
-function parseDocument(text: string): Chapter[] {
-  const chapters: Chapter[] = [];
-  let scene: Scene | undefined;
-  const lines: string[] = [];
-
-  const closeScene = () => {
-    if (scene) scene.body = lines.join("\n").trim();
-    lines.length = 0;
-  };
-
-  for (const line of text.split("\n")) {
-    if (line.startsWith("# ")) {
-      closeScene();
-      scene = undefined;
-      chapters.push({ heading: line, scenes: [] });
-    } else if (line.startsWith("## ") && chapters.length) {
-      closeScene();
-      scene = { heading: line, body: "" };
-      chapters[chapters.length - 1].scenes.push(scene);
-    } else {
-      lines.push(line);
-    }
-  }
-  closeScene();
-  return chapters;
-}
-
-function serializeDocument(chapters: Chapter[]): string {
-  const parts: string[] = [];
-  for (const chapter of chapters) {
-    parts.push(chapter.heading);
-    for (const scene of chapter.scenes) {
-      parts.push(scene.heading);
-      if (scene.body) parts.push(scene.body);
-    }
-  }
-  return parts.join("\n\n") + "\n";
-}
-
 const board = document.querySelector<HTMLDivElement>("#board")!;
 const chapterOf = new WeakMap<Element, Chapter>();
 const sceneOf = new WeakMap<Element, Scene>();
 let sortables: Sortable[] = [];
+
+// Texte placé avant le premier chapitre : il n'apparaît pas sur le cork
+// board, mais il est remis en tête du texte à chaque dépôt.
+let boardPreamble = "";
 
 // Titre de la dernière scène déplacée, pour la retrouver en revenant au texte.
 let movedHeading: string | undefined;
@@ -336,7 +293,7 @@ function applyBoardOrder(moved?: Element) {
     chapters.push(chapter);
   }
   view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: serializeDocument(chapters) },
+    changes: { from: 0, to: view.state.doc.length, insert: serializeDocument({ preamble: boardPreamble, chapters }) },
   });
   const scene = moved && sceneOf.get(moved);
   if (scene) movedHeading = scene.heading;
@@ -347,7 +304,9 @@ function buildBoard() {
   sortables = [];
   board.replaceChildren();
 
-  for (const chapter of parseDocument(view.state.doc.toString())) {
+  const outline = parseDocument(view.state.doc.toString());
+  boardPreamble = outline.preamble;
+  for (const chapter of outline.chapters) {
     const column = document.createElement("div");
     column.className = "chapter";
     chapterOf.set(column, chapter);

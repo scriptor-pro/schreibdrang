@@ -135,6 +135,8 @@
   --accent: #1F3FD1;
   --on-accent: #FFFFFF;
   --error: #B3261E;
+  /* Fond du cork board : la seule couleur hors du noir, du blanc et du bleu. */
+  --cork: #C9A878;
 
   font-family: var(--font-ui);
   font-size: 100%;
@@ -338,6 +340,12 @@ body.whole-screen .cm-editor .cm-content {
   padding: 2rem 2.5rem 2.5rem;
 }
 
+/* Quand l'app occupe tout l'écran, l'accueil est centré entre deux marges
+   égales, comme le texte, mais sans filets latéraux. */
+body.whole-screen #home {
+  margin: 0 auto;
+}
+
 #home h1 {
   margin: 0;
   font-size: 2.75rem;
@@ -492,11 +500,15 @@ body.whole-screen .cm-editor .cm-content {
   font-weight: 700;
 }
 
+/* Le fond imite le liège d'un tableau d'affichage : une couleur, et un grain
+   en tuile répétée (src/liege.png, dessiné par scripts/make-cork.py). Une
+   image fixe ne coûte rien pendant un glisser-déposer. */
 #board-scroll {
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  background: var(--cork) url("./liege.png");
 }
 
 #board {
@@ -725,6 +737,7 @@ select:focus-visible,
     --accent: #8296FF;
     --on-accent: #111111;
     --error: #FF8A80;
+    --cork: #4A3826;
   }
 }
 
@@ -741,4 +754,5 @@ select:focus-visible,
   --accent: #8296FF;
   --on-accent: #111111;
   --error: #FF8A80;
+  --cork: #4A3826;
 }

@@ -13,15 +13,13 @@ Version 0.0.2, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows n
 Ce qui fonctionne :
 
 - **Écriture** d'un texte au format roman (chapitres en `#`, scènes en `##`), en Courier Prime, avec le compte des caractères et des mots.
-- **Cork board** : les scènes en fiches, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
+- **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
 - **Export** en PDF, Word (.docx), OpenDocument (.odt), Markdown et texte brut.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
 Ce qui n'existe pas encore : les formats nouvelle, scénario, théâtre et vanilla, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import.
-
-Limite connue : dans le cork board, un texte placé avant le premier chapitre, ou entre un titre de chapitre et sa première scène, disparaît quand on déplace une fiche. Ctrl+Z le ramène.
 
 ## Prérequis
 
@@ -46,7 +44,7 @@ npm run tauri dev
 ## Contrôles
 
 ```bash
-npm test                          # réglages et textes récents
+npm test                          # réglages, textes récents, découpage en scènes
 npx tsc --noEmit                  # types
 python3 scripts/check-identite.py # identité visuelle
 ```
@@ -61,17 +59,20 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/main.ts` | éditeur, cork board, fichiers, export, accueil, actions du menu |
 | `src/settings.ts` | réglages : valeurs, validation, stockage |
 | `src/recents.ts` | liste des textes récents |
+| `src/outline.ts` | découpage du texte en chapitres et en scènes, pour le cork board |
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |
 | `src-tauri/src/lib.rs` | menu natif, lecture et écriture des fichiers, export, polices installées |
 | `scripts/fetch-fonts.py` | télécharge les polices embarquées depuis fonts.bunny.net |
 | `scripts/make-icon.py` | dessine l'icône de l'app |
+| `scripts/make-cork.py` | dessine le grain du liège du cork board |
+| `scripts/installer-lanceur.sh` | installe un lanceur et les icônes pour l'utilisateur |
 | `scripts/check-identite.py` | contrôle de l'identité visuelle |
-| `tests/` | tests des réglages et des textes récents |
+| `tests/` | tests des réglages, des textes récents et du découpage |
 
 ## Identité visuelle
 
-L'interface suit le modernisme typographique : noir, blanc et un seul bleu outremer, des angles droits, des filets, aucune ombre. Elle s'applique selon deux régimes : affirmée là où l'on choisit et organise (accueil, cork board, boîtes de dialogue), calme là où l'on écrit (éditeur et plein écran). Elle existe en thème clair et en thème sombre, et vise la conformité à WCAG 2.2 niveau AA et au RGAA.
+L'interface suit le modernisme typographique : noir, blanc et un seul bleu outremer, des angles droits, des filets, aucune ombre. Seul le cork board s'en écarte, avec son fond en liège. Elle s'applique selon deux régimes : affirmée là où l'on choisit et organise (accueil, cork board, boîtes de dialogue), calme là où l'on écrit (éditeur et plein écran). Elle existe en thème clair et en thème sombre, et vise la conformité à WCAG 2.2 niveau AA et au RGAA.
 
 Les polices et les pictogrammes sont embarqués dans l'app : rien n'est chargé depuis le réseau à l'exécution.
 
