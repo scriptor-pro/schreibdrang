@@ -1,0 +1,152 @@
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+// Fichiers nécessaires à l'export, embarqués dans l'exécutable : les modèles
+// Word et OpenDocument réglés sur Literata, et la police elle-même pour le PDF.
+const RESOURCES: [(&str, &[u8]); 6] = [
+    ("reference.docx", include_bytes!("../resources/reference.docx")),
+    ("reference.odt", include_bytes!("../resources/reference.odt")),
+    (
+        "fonts/Literata-Regular.ttf",
+        include_bytes!("../resources/fonts/Literata-Regular.ttf"),
+    ),
+    (
+        "fonts/Literata-Italic.ttf",
+        include_bytes!("../resources/fonts/Literata-Italic.ttf"),
+    ),
+    (
+        "fonts/Literata-Bold.ttf",
+        include_bytes!("../resources/fonts/Literata-Bold.ttf"),
+    ),
+    (
+        "fonts/Literata-BoldItalic.ttf",
+        include_bytes!("../resources/fonts/Literata-BoldItalic.ttf"),
+    ),
+];
+
+/// Copie les fichiers embarqués dans un dossier temporaire, où Pandoc peut les lire.
+fn resources_dir() -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join(concat!("schreibdrang-prototype-", env!("CARGO_PKG_VERSION")));
+    fs::create_dir_all(dir.join("fonts")).map_err(|e| e.to_string())?;
+    for (name, bytes) in RESOURCES {
+        fs::write(dir.join(name), bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+fn run_pandoc(markdown: &str, output: &Path, args: &[String]) -> Result<(), String> {
+    let mut child = Command::new("pandoc")
+        // « -smart » : le texte est exporté tel qu'il a été saisi, sans
+        // remplacement automatique des apostrophes ou des tirets.
+        .args(["--from", "markdown-smart", "--output"])
+        .arg(output)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Pandoc est introuvable sur ce système ({e})."))?;
+
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(markdown.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    let result = child.wait_with_output().map_err(|e| e.to_string())?;
+    if result.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&result.stderr).trim().to_string())
+    }
+}
+
+fn export(path: &Path, format: &str, markdown: &str) -> Result<(), String> {
+    let resources = resources_dir()?;
+    let reference = |name: &str| format!("--reference-doc={}", resources.join(name).display());
+
+    match format {
+        "md" => fs::write(path, markdown).map_err(|e| e.to_string()),
+        "txt" => run_pandoc(
+            markdown,
+            path,
+            &["--to=plain".into(), "--wrap=none".into()],
+        ),
+        "docx" => run_pandoc(markdown, path, &[reference("reference.docx")]),
+        "odt" => run_pandoc(markdown, path, &[reference("reference.odt")]),
+        "pdf" => {
+            let variables = [
+                "documentclass=report".to_string(),
+                "lang=fr".to_string(),
+                "papersize=a4".to_string(),
+                "fontsize=11pt".to_string(),
+                "geometry:margin=2.5cm".to_string(),
+                "mainfont=Literata-Regular.ttf".to_string(),
+                format!("mainfontoptions=Path={}/", resources.join("fonts").display()),
+                "mainfontoptions=BoldFont=Literata-Bold.ttf".to_string(),
+                "mainfontoptions=ItalicFont=Literata-Italic.ttf".to_string(),
+                "mainfontoptions=BoldItalicFont=Literata-BoldItalic.ttf".to_string(),
+            ];
+            let mut args = vec![
+                "--pdf-engine=xelatex".to_string(),
+                "--top-level-division=chapter".to_string(),
+            ];
+            for variable in variables {
+                args.push("--variable".to_string());
+                args.push(variable);
+            }
+            run_pandoc(markdown, path, &args)
+        }
+        other => Err(format!("Format d'export inconnu : {other}")),
+    }
+}
+
+#[tauri::command]
+async fn export_document(path: String, format: String, markdown: String) -> Result<(), String> {
+    // La conversion peut durer plusieurs dizaines de secondes : elle tourne
+    // hors du fil principal pour ne pas figer l'interface.
+    tauri::async_runtime::spawn_blocking(move || export(Path::new(&path), &format, &markdown))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    // Écriture dans un fichier voisin, puis renommage : une panne en cours
+    // d'écriture ne laisse pas un texte tronqué à la place de l'ancien.
+    let target = Path::new(&path);
+    let mut name = target.file_name().ok_or("Nom de fichier invalide")?.to_os_string();
+    name.push(".tmp");
+    let temp = target.with_file_name(name);
+    fs::write(&temp, contents).map_err(|e| e.to_string())?;
+    fs::rename(&temp, target).map_err(|e| {
+        let _ = fs::remove_file(&temp);
+        e.to_string()
+    })
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Sous Linux, WebKitGTK dessine la page par zones, certaines par le
+    // processeur et d'autres par la carte graphique, et les deux méthodes ne
+    // donnent pas la même graisse au texte. On impose le rendu par le
+    // processeur pour que tout le texte soit dessiné de la même façon.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_SKIA_ENABLE_CPU_RENDERING").is_none() {
+        std::env::set_var("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1");
+    }
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![export_document, read_text_file, write_text_file])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

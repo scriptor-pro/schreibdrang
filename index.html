@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Schreibdrang — prototype 0.0.1</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <header id="toolbar">
+      <button id="btn-text" class="active">Texte</button>
+      <button id="btn-board">Cork board</button>
+      <button id="btn-fullscreen">Plein écran (F11)</button>
+      <button id="btn-new">Nouveau (Ctrl+N)</button>
+      <button id="btn-open">Ouvrir… (Ctrl+O)</button>
+      <button id="btn-save">Enregistrer (Ctrl+S)</button>
+      <button id="btn-save-as">Enregistrer sous… (Ctrl+Maj+S)</button>
+      <button id="btn-export">Export</button>
+      <span id="filename">Sans titre</span>
+      <span id="version">prototype 0.0.1</span>
+    </header>
+
+    <main>
+      <section id="view-text">
+        <div id="editor"></div>
+      </section>
+
+      <section id="view-board" hidden>
+        <p id="board-help">
+          <span>Au clavier : Tab ou les flèches pour atteindre une fiche ou un chapitre, Entrée pour le saisir, les flèches pour le déplacer, Entrée pour le déposer, Échap pour annuler.</span>
+          <span id="board-status" role="status"></span>
+        </p>
+        <div id="board-scroll">
+          <div id="board"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer id="footer">
+      <span id="counts">…</span>
+      <span id="latency">Latence de frappe : —</span>
+      <span id="export-status" role="status"></span>
+    </footer>
+
+    <dialog id="export-dialog" aria-labelledby="export-title">
+      <form method="dialog">
+        <h2 id="export-title">Exporter le texte</h2>
+        <fieldset>
+          <legend>Format</legend>
+          <label><input type="radio" name="format" value="pdf" checked /> PDF (.pdf), en Literata</label>
+          <label><input type="radio" name="format" value="docx" /> Word (.docx), en Literata</label>
+          <label><input type="radio" name="format" value="odt" /> OpenDocument (.odt), en Literata</label>
+          <label><input type="radio" name="format" value="md" /> Markdown (.md)</label>
+          <label><input type="radio" name="format" value="txt" /> Texte brut (.txt)</label>
+          <label class="disabled"><input type="radio" name="format" value="fountain" disabled /> Fountain (.fountain), réservé au format scénario</label>
+          <label class="disabled"><input type="radio" name="format" value="fdx" disabled /> Final Draft (.fdx), réservé au format scénario</label>
+        </fieldset>
+        <div class="actions">
+          <button type="button" id="export-cancel">Annuler</button>
+          <button type="submit" value="export" id="export-confirm">Exporter…</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="new-dialog" aria-labelledby="new-title" aria-describedby="new-message">
+      <form method="dialog">
+        <h2 id="new-title">Nouveau texte</h2>
+        <p id="new-message">Tu as modifié ce texte sans l'enregistrer. Si tu continues, il sera effacé.</p>
+        <div class="actions">
+          <button type="button" id="new-cancel" autofocus>Annuler</button>
+          <button type="submit" value="confirm" id="new-confirm">Effacer et créer</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,372 @@
+/* Courier Prime est embarquée dans l'app (fichiers de fonts.bunny.net,
+   récupérés par scripts/fetch-fonts.py) : rien n'est chargé depuis le réseau,
+   et la version installée sur le système n'est pas utilisée. */
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-400-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-700-italic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-ext-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-ext-400-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-ext-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Courier Prime App";
+  src: url("./fonts/courier-prime-latin-ext-700-italic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+:root {
+  --paper: #fbfaf7;
+  --ink: #22201c;
+  --muted: #7a756b;
+  --line: #ddd8cd;
+  --cork: #c9a878;
+  --card: #fffdf6;
+  font-family: "Courier Prime App", "Courier New", Courier, monospace;
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+#toolbar button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+#toolbar button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+#filename {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+#version {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+section {
+  flex: 1;
+  min-height: 0;
+}
+
+section[hidden] {
+  display: none;
+}
+
+#editor {
+  height: 100%;
+}
+
+#footer {
+  display: flex;
+  gap: 2rem;
+  padding: 0.4rem 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+body.fullscreen #toolbar {
+  display: none;
+}
+
+/* Cork board */
+
+/* Les chapitres s'empilent verticalement ; dans chaque chapitre, les fiches
+   se répartissent sur autant de lignes que la largeur de la fenêtre l'exige. */
+#view-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  background: var(--cork);
+}
+
+/* L'aide reste hors de la zone qui défile, pour ne jamais masquer la fiche
+   qui a le focus. */
+#board-help {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+#board-status {
+  min-height: 1.4em;
+  font-weight: 700;
+}
+
+#board-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.card:focus-visible,
+.chapter h2:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.chapter h2 {
+  border-radius: 3px;
+}
+
+.card.grabbed,
+.chapter.grabbed {
+  outline: 3px dashed var(--ink);
+  outline-offset: 2px;
+}
+
+#board {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.chapter {
+  /* Un chapitre hors de l'écran n'est pas dessiné ; sa hauteur est estimée,
+     puis retenue une fois qu'il a été affiché. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 0.6rem;
+}
+
+.chapter h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  cursor: grab;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.6rem;
+  min-height: 60px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 3px;
+  padding: 0.6rem 0.7rem;
+  /* Une bordure plutôt qu'une ombre floue : le flou est recalculé à chaque
+     mouvement pendant un glisser-déposer, et le rendu se fait sans carte
+     graphique. */
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.card h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+}
+
+.card p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.card.ghost {
+  opacity: 0.35;
+}
+
+.card.dragging {
+  cursor: grabbing;
+  border: 2px solid var(--ink);
+}
+
+/* Export */
+
+#export-status {
+  margin-left: auto;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+dialog {
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 1.2rem 1.5rem;
+  min-width: 26rem;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+dialog h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+}
+
+dialog p {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  max-width: 26rem;
+}
+
+dialog fieldset {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+dialog label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 28px;
+  font-size: 0.9rem;
+}
+
+dialog label.disabled {
+  color: var(--muted);
+}
+
+dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+dialog button {
+  font: inherit;
+  font-size: 0.9rem;
+  min-height: 28px;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+dialog #export-confirm,
+dialog #new-confirm {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
