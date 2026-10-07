@@ -178,11 +178,11 @@ function createState(doc: string): EditorState {
       // Les styles de l'éditeur passent par un thème : une feuille CSS ordinaire
       // est écrasée par les règles par défaut de CodeMirror.
       EditorView.theme({
-        "&": { height: "100%", backgroundColor: "var(--paper)" },
+        "&": { height: "100%", backgroundColor: "var(--bg)", color: "var(--ink)" },
         "&.cm-focused": { outline: "none" },
         ".cm-scroller": {
-          fontFamily: '"Courier Prime App", "Courier New", Courier, monospace',
-          fontSize: "17px",
+          fontFamily: "var(--font-text)",
+          fontSize: "var(--text-size)",
           lineHeight: "1.6",
           overflow: "auto",
         },
@@ -190,6 +190,13 @@ function createState(doc: string): EditorState {
           maxWidth: "72ch",
           margin: "0",
           padding: "2rem 2rem 40vh",
+          caretColor: "var(--ink)",
+        },
+        // Le curseur et la sélection de CodeMirror sont pensés pour un fond
+        // clair : sans ces règles, ils disparaissent en thème sombre.
+        ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ink)" },
+        ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+          backgroundColor: "var(--ecr-selection)",
         },
         ".cm-nbsp": { position: "relative" },
         ".cm-nbsp::after": {
@@ -527,6 +534,7 @@ function show(which: "text" | "board") {
   if (which === "board") buildBoard();
   viewText.hidden = which !== "text";
   viewBoard.hidden = which !== "board";
+  document.body.dataset.regime = which === "text" ? "ecriture" : "affiche";
   btnText.classList.toggle("active", which === "text");
   btnBoard.classList.toggle("active", which === "board");
   if (which === "text") {
@@ -596,9 +604,10 @@ const fileStatus = document.querySelector<HTMLSpanElement>("#export-status")!;
 
 const TEXT_FILTERS = [{ name: "Texte Markdown", extensions: ["md", "txt"] }];
 
-function setStatus(message: string) {
-  fileStatus.textContent = message;
-  fileStatus.title = message;
+function setStatus(message: string, error = false) {
+  fileStatus.textContent = error ? `Erreur : ${message}` : message;
+  fileStatus.title = fileStatus.textContent;
+  fileStatus.classList.toggle("error", error);
 }
 
 // Remplace le texte affiché. Un nouvel état, plutôt qu'un remplacement du
@@ -648,7 +657,7 @@ async function openDocument() {
     loadDocument(text, path);
     setStatus(`Ouvert : ${path}`);
   } catch (error) {
-    setStatus(`Échec de l'ouverture : ${error}`);
+    setStatus(`l'ouverture a échoué (${error})`, true);
   }
 }
 
@@ -666,7 +675,7 @@ async function writeDocument(path: string) {
     setDirty(view.state.doc.toString() !== text);
     setStatus(`Enregistré : ${path}`);
   } catch (error) {
-    setStatus(`Échec de l'enregistrement : ${error}`);
+    setStatus(`l'enregistrement a échoué (${error})`, true);
   }
 }
 
@@ -715,7 +724,6 @@ const FORMATS: Record<string, string> = {
 
 const btnExport = document.querySelector<HTMLButtonElement>("#btn-export")!;
 const exportDialog = document.querySelector<HTMLDialogElement>("#export-dialog")!;
-const exportStatus = document.querySelector<HTMLSpanElement>("#export-status")!;
 
 btnExport.addEventListener("click", () => {
   exportDialog.returnValue = "cancel";
@@ -739,16 +747,15 @@ exportDialog.addEventListener("close", async () => {
   if (!path) return;
 
   btnExport.disabled = true;
-  exportStatus.textContent = `Export ${FORMATS[format]} en cours…`;
+  setStatus(`Export ${FORMATS[format]} en cours…`);
   const start = performance.now();
   try {
     await invoke("export_document", { path, format, markdown: view.state.doc.toString() });
     const seconds = ((performance.now() - start) / 1000).toFixed(1);
-    exportStatus.textContent = `Exporté en ${seconds} s : ${path}`;
+    setStatus(`Exporté en ${seconds} s : ${path}`);
   } catch (error) {
-    exportStatus.textContent = `Échec de l'export : ${error}`;
+    setStatus(`l'export a échoué (${error})`, true);
   } finally {
-    exportStatus.title = exportStatus.textContent ?? "";
     btnExport.disabled = false;
   }
 });

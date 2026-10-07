@@ -10,6 +10,7 @@
 
   <body data-regime="ecriture">
     <header id="toolbar">
+      <strong id="brand">Schreibdrang<svg class="asterisk" viewBox="0 0 100 100" aria-hidden="true"><rect x="42" y="8" width="16" height="84"/><rect x="42" y="8" width="16" height="84" transform="rotate(60 50 50)"/><rect x="42" y="8" width="16" height="84" transform="rotate(120 50 50)"/></svg></strong>
       <button id="btn-text" class="active">Texte</button>
       <button id="btn-board">Cork board</button>
       <button id="btn-fullscreen">Plein écran (F11)</button>
@@ -59,7 +60,7 @@
         </fieldset>
         <div class="actions">
           <button type="button" id="export-cancel">Annuler</button>
-          <button type="submit" value="export" id="export-confirm">Exporter…</button>
+          <button type="submit" class="primary" value="export" id="export-confirm">Exporter…</button>
         </div>
       </form>
     </dialog>
@@ -70,7 +71,7 @@
         <p id="new-message">Tu as modifié ce texte sans l'enregistrer. Si tu continues, il sera effacé.</p>
         <div class="actions">
           <button type="button" id="new-cancel" autofocus>Annuler</button>
-          <button type="submit" value="confirm" id="new-confirm">Effacer et créer</button>
+          <button type="submit" class="primary" value="confirm" id="new-confirm">Effacer et créer</button>
         </div>
       </form>
     </dialog>
