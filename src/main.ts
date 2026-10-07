@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView, MatchDecorator, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { redo, selectAll, undo } from "@codemirror/commands";
 import Sortable from "sortablejs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -180,12 +182,25 @@ function setDirty(value: boolean) {
   filenameEl.title = currentPath ?? "";
 }
 
+// Mise en valeur du Markdown sans autre couleur que celles de l'identité :
+// la graisse et l'italique portent le sens, les marques passent en texte
+// secondaire.
+const textHighlight = HighlightStyle.define([
+  { tag: tags.heading, fontWeight: "700" },
+  { tag: tags.strong, fontWeight: "700" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.quote], color: "var(--muted)" },
+  { tag: [tags.link, tags.url], textDecoration: "underline" },
+]);
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
     extensions: [
       minimalSetup,
       markdown(),
+      syntaxHighlighting(textHighlight),
       EditorView.lineWrapping,
       // Les styles de l'éditeur passent par un thème : une feuille CSS ordinaire
       // est écrasée par les règles par défaut de CodeMirror.
@@ -552,6 +567,7 @@ function show(which: "home" | "text" | "board") {
   document.body.dataset.regime = which === "text" ? "ecriture" : "affiche";
   btnText.classList.toggle("active", which === "text");
   btnBoard.classList.toggle("active", which === "board");
+  if (which !== "text") view.contentDOM.blur();
   if (which === "text") {
     view.focus();
     if (movedHeading) {
@@ -572,7 +588,11 @@ btnBoard.addEventListener("click", () => show("board"));
 
 async function setFullscreen(on: boolean) {
   await getCurrentWindow().setFullscreen(on);
-  await invoke("set_menu_visible", { visible: !on });
+  try {
+    await invoke("set_menu_visible", { visible: !on });
+  } catch (error) {
+    setStatus(`le menu n'a pas pu être ${on ? "masqué" : "affiché"} (${error})`, true);
+  }
   document.body.classList.toggle("fullscreen", on);
   if (on) show("text");
 }
@@ -819,7 +839,7 @@ function renderRecents() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "recent";
-      button.append(name, time, folder);
+      button.append(name, " ", time, " ", folder);
       button.addEventListener("click", () => {
         confirmDiscard("Ouvrir un texte", "Abandonner et ouvrir", async () => {
           // Un fichier disparu sort de la liste : l'accueil est redessiné.
@@ -886,8 +906,8 @@ settingsForm.addEventListener("change", () => {
     startup: data.get("startup"),
   });
   sizeInput.value = String(settings.size);
-  saveSettings(settings);
   applySettings(settings);
+  saveSettings(settings);
   // La police ou la taille ont pu changer : l'éditeur remesure ses lignes.
   view.requestMeasure();
 });
@@ -909,21 +929,37 @@ function openAbout() {
 
 async function editClipboard(action: "cut" | "copy" | "paste") {
   const { from, to } = view.state.selection.main;
-  if (action === "paste") {
-    const text = await readText();
-    if (text) view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
-  } else if (from !== to) {
-    await writeText(view.state.sliceDoc(from, to));
-    if (action === "cut") view.dispatch(view.state.replaceSelection(""));
+  try {
+    if (action === "paste") {
+      const text = await readText();
+      if (text) view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
+    } else if (from !== to) {
+      await writeText(view.state.sliceDoc(from, to));
+      if (action === "cut") view.dispatch(view.state.replaceSelection(""));
+    }
+  } catch (error) {
+    setStatus(`le presse-papiers n'a pas répondu (${error})`, true);
   }
   view.focus();
 }
 
+// Vrai quand la fermeture a été confirmée : le gestionnaire ne la retient plus.
+let closing = false;
+
 function requestQuit() {
   confirmDiscard("Quitter Schreibdrang", "Abandonner et quitter", () => {
-    getCurrentWindow().close();
+    closing = true;
+    getCurrentWindow().destroy();
   });
 }
+
+// La croix de la fenêtre et Alt+F4 passent par la même confirmation que
+// « Quitter » quand le texte n'est pas enregistré.
+getCurrentWindow().onCloseRequested((event) => {
+  if (closing || !dirty) return;
+  event.preventDefault();
+  requestQuit();
+});
 
 const ACTIONS: Record<string, () => void> = {
   "file-new": requestNewDocument,
@@ -959,6 +995,12 @@ function runAction(id: string) {
   lastActionTime = now;
   // Une boîte de dialogue ouverte suspend les actions du menu.
   if (document.querySelector("dialog[open]")) return;
+  // Les commandes d'édition agissent sur le texte : elles n'ont de sens que
+  // si la vue Texte est affichée.
+  if (id.startsWith("edit-") && id !== "edit-settings" && viewText.hidden) {
+    setStatus("Cette commande agit sur le texte : affiche d'abord la vue Texte.");
+    return;
+  }
   ACTIONS[id]?.();
 }
 

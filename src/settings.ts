@@ -39,7 +39,11 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(settings: Settings) {
-  localStorage.setItem(KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(settings));
+  } catch {
+    // Stockage plein ou indisponible : le réglage reste valable pour la session.
+  }
 }
 
 export function applySettings(settings: Settings) {

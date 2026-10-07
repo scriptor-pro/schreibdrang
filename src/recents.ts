@@ -41,5 +41,9 @@ export function loadRecents(): Recent[] {
 }
 
 export function saveRecents(list: Recent[]) {
-  localStorage.setItem(KEY, JSON.stringify(list));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // Stockage plein ou indisponible : la liste reste valable pour la session.
+  }
 }
