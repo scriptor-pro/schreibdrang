@@ -114,17 +114,54 @@
   unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
 }
 
+/* Identité visuelle : voir identite-visuelle.md dans le dossier du projet.
+   Les couleurs sont déclarées par régime (affiche, écriture) et par thème ;
+   les règles n'utilisent que --bg, --ink, --muted et --rule, que le régime
+   en cours renseigne. */
 :root {
-  --paper: #fbfaf7;
-  --ink: #22201c;
-  --muted: #7a756b;
-  --line: #ddd8cd;
-  --cork: #c9a878;
-  --card: #fffdf6;
-  font-family: "Courier Prime App", "Courier New", Courier, monospace;
-  font-size: 16px;
-  color: var(--ink);
-  background: var(--paper);
+  color-scheme: light dark;
+  --font-ui: "Jost App", sans-serif;
+  --font-text: "Courier Prime App", "Courier New", Courier, monospace;
+  --text-size: 17px;
+
+  --aff-bg: #FFFFFF;
+  --aff-ink: #000000;
+  --aff-muted: #5C5C5C;
+  --ecr-bg: #FAFAF7;
+  --ecr-ink: #1C1C1C;
+  --ecr-muted: #5C5C5C;
+  --ecr-hint: #6B6B6B;
+  --ecr-selection: #D5DCFA;
+  --accent: #1F3FD1;
+  --on-accent: #FFFFFF;
+  --error: #B3261E;
+
+  font-family: var(--font-ui);
+  font-size: 100%;
+}
+
+:root[data-theme="clair"] {
+  color-scheme: light;
+}
+
+:root[data-theme="sombre"] {
+  color-scheme: dark;
+}
+
+body[data-regime="ecriture"] {
+  --bg: var(--ecr-bg);
+  --ink: var(--ecr-ink);
+  --muted: var(--ecr-muted);
+  --rule: 1px;
+}
+
+/* Les boîtes de dialogue relèvent toujours du régime affiche. */
+body[data-regime="affiche"],
+dialog {
+  --bg: var(--aff-bg);
+  --ink: var(--aff-ink);
+  --muted: var(--aff-muted);
+  --rule: 3px;
 }
 
 * {
@@ -418,4 +455,36 @@ button:focus-visible,
 input:focus-visible {
   outline: 3px solid var(--ink);
   outline-offset: 2px;
+}
+
+/* Thème sombre : celui du système, sauf si le thème clair est forcé… */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="clair"]) {
+    --aff-bg: #000000;
+    --aff-ink: #FFFFFF;
+    --aff-muted: #A8A8A3;
+    --ecr-bg: #161616;
+    --ecr-ink: #E6E6E1;
+    --ecr-muted: #A8A8A3;
+    --ecr-hint: #959590;
+    --ecr-selection: #2A3570;
+    --accent: #8296FF;
+    --on-accent: #111111;
+    --error: #FF8A80;
+  }
+}
+
+/* … ou le thème sombre forcé dans les paramètres. */
+:root[data-theme="sombre"] {
+  --aff-bg: #000000;
+  --aff-ink: #FFFFFF;
+  --aff-muted: #A8A8A3;
+  --ecr-bg: #161616;
+  --ecr-ink: #E6E6E1;
+  --ecr-muted: #A8A8A3;
+  --ecr-hint: #959590;
+  --ecr-selection: #2A3570;
+  --accent: #8296FF;
+  --on-accent: #111111;
+  --error: #FF8A80;
 }
