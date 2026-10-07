@@ -7,6 +7,7 @@ import Sortable from "sortablejs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { fillIcons } from "./icons";
 
 // ---------------------------------------------------------------------------
 // Texte de test : environ 100 000 mots, avec accents et signes typographiques
@@ -760,4 +761,5 @@ exportDialog.addEventListener("close", async () => {
   }
 });
 
+fillIcons(document);
 view.focus();
