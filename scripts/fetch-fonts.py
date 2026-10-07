@@ -2,6 +2,7 @@
 """Télécharge les polices du prototype depuis fonts.bunny.net.
 
 - Courier Prime (affichage) : fichiers woff2 copiés tels quels dans src/fonts/.
+- Jost (interface) : fichiers woff2 copiés tels quels dans src/fonts/.
 - Literata (export) : fonts.bunny.net ne fournit que des woff2 découpés par
   jeu de caractères ; ils sont convertis et fusionnés en un fichier TrueType
   par style dans src-tauri/resources/fonts/, lisible par le moteur PDF.
@@ -11,6 +12,7 @@ Les polices sont embarquées dans l'app : rien n'est téléchargé à l'exécuti
 
 import io
 import pathlib
+import sys
 import urllib.request
 
 from fontTools.merge import Merger
@@ -29,6 +31,7 @@ STYLES = [
     ("700", "normal", "Bold"),
     ("700", "italic", "BoldItalic"),
 ]
+JOST_WEIGHTS = ["400", "700", "800"]
 
 
 def download(family: str, subset: str, weight: str, style: str) -> bytes:
@@ -39,29 +42,40 @@ def download(family: str, subset: str, weight: str, style: str) -> bytes:
 
 
 def main() -> None:
+    wanted = set(sys.argv[1:]) or {"courier-prime", "literata", "jost"}
     for directory in (WEB_DIR, EXPORT_DIR, TMP_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
+    # Jost : woff2 d'origine, pour l'interface.
+    if "jost" in wanted:
+        for subset in SUBSETS:
+            for weight in JOST_WEIGHTS:
+                name = f"jost-{subset}-{weight}-normal.woff2"
+                (WEB_DIR / name).write_bytes(download("jost", subset, weight, "normal"))
+                print("page   ", name)
+
     # Courier Prime : woff2 d'origine, pour la page.
-    for subset in SUBSETS:
-        for weight, style, _ in STYLES:
-            name = f"courier-prime-{subset}-{weight}-{style}.woff2"
-            (WEB_DIR / name).write_bytes(download("courier-prime", subset, weight, style))
-            print("page   ", name)
+    if "courier-prime" in wanted:
+        for subset in SUBSETS:
+            for weight, style, _ in STYLES:
+                name = f"courier-prime-{subset}-{weight}-{style}.woff2"
+                (WEB_DIR / name).write_bytes(download("courier-prime", subset, weight, style))
+                print("page   ", name)
 
     # Literata : un TrueType par style, pour l'export.
-    for weight, style, label in STYLES:
-        parts = []
-        for subset in SUBSETS:
-            font = TTFont(io.BytesIO(download("literata", subset, weight, style)))
-            font.flavor = None
-            path = TMP_DIR / f"literata-{subset}-{weight}-{style}.ttf"
-            font.save(path)
-            parts.append(str(path))
-        merged = Merger().merge(parts)
-        target = EXPORT_DIR / f"Literata-{label}.ttf"
-        merged.save(target)
-        print("export ", target.name, f"({len(merged.getBestCmap())} caractères)")
+    if "literata" in wanted:
+        for weight, style, label in STYLES:
+            parts = []
+            for subset in SUBSETS:
+                font = TTFont(io.BytesIO(download("literata", subset, weight, style)))
+                font.flavor = None
+                path = TMP_DIR / f"literata-{subset}-{weight}-{style}.ttf"
+                font.save(path)
+                parts.append(str(path))
+            merged = Merger().merge(parts)
+            target = EXPORT_DIR / f"Literata-{label}.ttf"
+            merged.save(target)
+            print("export ", target.name, f"({len(merged.getBestCmap())} caractères)")
 
     for path in TMP_DIR.iterdir():
         path.unlink()
