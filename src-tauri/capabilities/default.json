@@ -9,6 +9,7 @@
     "core:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
+    "core:window:allow-is-maximized",
     "dialog:allow-open",
     "dialog:allow-save",
     "core:window:allow-close",

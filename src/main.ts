@@ -603,6 +603,22 @@ async function toggleFullscreen() {
 
 btnFullscreen.addEventListener("click", () => runAction("view-fullscreen"));
 
+// Quand l'app occupe tout l'écran, en plein écran ou dans une fenêtre
+// agrandie, le texte est centré entre deux filets (voir styles.css). L'état
+// est relu à chaque changement de taille de la fenêtre.
+async function updateWholeScreen() {
+  const appWindow = getCurrentWindow();
+  try {
+    const whole = (await appWindow.isFullscreen()) || (await appWindow.isMaximized());
+    document.body.classList.toggle("whole-screen", whole);
+  } catch {
+    // État de la fenêtre illisible : le texte reste aligné à gauche.
+  }
+}
+
+getCurrentWindow().onResized(updateWholeScreen);
+updateWholeScreen();
+
 window.addEventListener("keydown", (event) => {
   if (event.key === "F11") {
     event.preventDefault();

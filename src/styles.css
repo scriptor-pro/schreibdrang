@@ -291,6 +291,17 @@ body.fullscreen #toolbar {
   display: none;
 }
 
+/* Quand l'app occupe tout l'écran (plein écran ou fenêtre agrandie), le texte
+   est centré entre deux marges égales, et un fin filet le borde à gauche et à
+   droite sur toute la hauteur. Le sélecteur est plus précis que celui du thème
+   de l'éditeur, qui aligne le texte à gauche. */
+body.fullscreen .cm-editor .cm-content,
+body.whole-screen .cm-editor .cm-content {
+  margin: 0 auto;
+  border-left: 1px solid var(--ink);
+  border-right: 1px solid var(--ink);
+}
+
 /* Messages d'état ; une erreur porte une icône, le mot « Erreur » et le rouge. */
 #export-status {
   margin-left: auto;
