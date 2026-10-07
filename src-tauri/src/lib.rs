@@ -2,6 +2,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, WebviewWindow, Wry};
 
 // Fichiers nécessaires à l'export, embarqués dans l'exécutable : les modèles
 // Word et OpenDocument réglés sur Literata, et la police elle-même pour le PDF.
@@ -154,6 +156,66 @@ async fn list_monospace_fonts() -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Barre de menu native. Chaque entrée porte un identifiant, transmis à la
+/// page par l'événement « menu » : c'est la page qui exécute l'action.
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let item = |id: &str, label: &str, shortcut: Option<&str>| {
+        let builder = MenuItemBuilder::with_id(id, label);
+        match shortcut {
+            Some(keys) => builder.accelerator(keys),
+            None => builder,
+        }
+        .build(app)
+    };
+
+    let file = SubmenuBuilder::new(app, "Fichier")
+        .item(&item("file-new", "Nouveau", Some("CmdOrCtrl+N"))?)
+        .item(&item("file-open", "Ouvrir…", Some("CmdOrCtrl+O"))?)
+        .separator()
+        .item(&item("file-save", "Enregistrer", Some("CmdOrCtrl+S"))?)
+        .item(&item("file-save-as", "Enregistrer sous…", Some("CmdOrCtrl+Shift+S"))?)
+        .item(&item("file-export", "Exporter…", None)?)
+        .separator()
+        .item(&item("file-test", "Charger le texte de test", None)?)
+        .separator()
+        .item(&item("file-quit", "Quitter", Some("CmdOrCtrl+Q"))?)
+        .build()?;
+
+    // Les raccourcis d'édition restent gérés par l'éditeur et les champs de
+    // saisie : les afficher ici déclencherait deux fois la même action.
+    let edit = SubmenuBuilder::new(app, "Édition")
+        .item(&item("edit-undo", "Annuler", None)?)
+        .item(&item("edit-redo", "Rétablir", None)?)
+        .separator()
+        .item(&item("edit-cut", "Couper", None)?)
+        .item(&item("edit-copy", "Copier", None)?)
+        .item(&item("edit-paste", "Coller", None)?)
+        .item(&item("edit-select-all", "Tout sélectionner", None)?)
+        .separator()
+        .item(&item("edit-settings", "Paramètres…", None)?)
+        .build()?;
+
+    let view = SubmenuBuilder::new(app, "Affichage")
+        .item(&item("view-home", "Accueil", None)?)
+        .item(&item("view-text", "Texte", None)?)
+        .item(&item("view-board", "Cork board", None)?)
+        .separator()
+        .item(&item("view-fullscreen", "Plein écran", Some("F11"))?)
+        .build()?;
+
+    let help = SubmenuBuilder::new(app, "Aide")
+        .item(&item("help-about", "À propos de Schreibdrang", None)?)
+        .build()?;
+
+    MenuBuilder::new(app).items(&[&file, &edit, &view, &help]).build()
+}
+
+/// Affiche ou masque la barre de menu (masquée en plein écran).
+#[tauri::command]
+fn set_menu_visible(window: WebviewWindow, visible: bool) -> Result<(), String> {
+    if visible { window.show_menu() } else { window.hide_menu() }.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Sous Linux, WebKitGTK dessine la page par zones, certaines par le
@@ -167,7 +229,18 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![export_document, read_text_file, write_text_file, list_monospace_fonts])
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .menu(build_menu)
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu", event.id().as_ref());
+        })
+        .invoke_handler(tauri::generate_handler![
+            export_document,
+            read_text_file,
+            write_text_file,
+            list_monospace_fonts,
+            set_menu_visible
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

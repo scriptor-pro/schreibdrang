@@ -3,10 +3,13 @@ import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView, MatchDecorator, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
+import { redo, selectAll, undo } from "@codemirror/commands";
 import Sortable from "sortablejs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { fillIcons } from "./icons";
 import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
@@ -569,6 +572,7 @@ btnBoard.addEventListener("click", () => show("board"));
 
 async function setFullscreen(on: boolean) {
   await getCurrentWindow().setFullscreen(on);
+  await invoke("set_menu_visible", { visible: !on });
   document.body.classList.toggle("fullscreen", on);
   if (on) show("text");
 }
@@ -577,26 +581,25 @@ async function toggleFullscreen() {
   setFullscreen(!(await getCurrentWindow().isFullscreen()));
 }
 
-btnFullscreen.addEventListener("click", toggleFullscreen);
+btnFullscreen.addEventListener("click", () => runAction("view-fullscreen"));
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "F11") {
     event.preventDefault();
-    toggleFullscreen();
+    runAction("view-fullscreen");
   } else if (event.key === "Escape" && document.body.classList.contains("fullscreen")) {
     setFullscreen(false);
-  } else if (event.ctrlKey && !event.altKey && !document.querySelector("dialog[open]")) {
+  } else if (event.ctrlKey && !event.altKey) {
     const key = event.key.toLowerCase();
-    if (key === "n" && !event.shiftKey) {
+    const id =
+      key === "n" && !event.shiftKey ? "file-new"
+      : key === "o" && !event.shiftKey ? "file-open"
+      : key === "s" ? (event.shiftKey ? "file-save-as" : "file-save")
+      : key === "q" && !event.shiftKey ? "file-quit"
+      : undefined;
+    if (id) {
       event.preventDefault();
-      requestNewDocument();
-    } else if (key === "o" && !event.shiftKey) {
-      event.preventDefault();
-      requestOpenDocument();
-    } else if (key === "s") {
-      event.preventDefault();
-      if (event.shiftKey) saveDocumentAs();
-      else saveDocument();
+      runAction(id);
     }
   }
 });
@@ -838,9 +841,6 @@ function loadTestText() {
   });
 }
 
-// Le menu n'appelle loadTestText qu'à la tâche 9.
-void loadTestText;
-
 document.querySelector<HTMLButtonElement>("#format-roman")!.addEventListener("click", requestNewDocument);
 document.querySelector<HTMLButtonElement>("#home-open")!.addEventListener("click", requestOpenDocument);
 
@@ -874,22 +874,6 @@ async function openSettings() {
   }
 }
 
-// Le menu n'appelle openSettings qu'à la tâche 9.
-void openSettings;
-
-// ---------------------------------------------------------------------------
-// À propos
-// ---------------------------------------------------------------------------
-
-const aboutDialog = document.querySelector<HTMLDialogElement>("#about-dialog")!;
-
-function openAbout() {
-  if (document.querySelector("dialog[open]")) return;
-  aboutDialog.showModal();
-}
-
-void openAbout;
-
 settingsForm.addEventListener("change", () => {
   const data = new FormData(settingsForm);
   // La saisie est ramenée dans les limites ; un champ vide garde la taille actuelle.
@@ -907,6 +891,78 @@ settingsForm.addEventListener("change", () => {
   // La police ou la taille ont pu changer : l'éditeur remesure ses lignes.
   view.requestMeasure();
 });
+
+// ---------------------------------------------------------------------------
+// À propos
+// ---------------------------------------------------------------------------
+
+const aboutDialog = document.querySelector<HTMLDialogElement>("#about-dialog")!;
+
+function openAbout() {
+  if (document.querySelector("dialog[open]")) return;
+  aboutDialog.showModal();
+}
+
+// ---------------------------------------------------------------------------
+// Actions : une seule entrée pour le menu, les boutons et les raccourcis
+// ---------------------------------------------------------------------------
+
+async function editClipboard(action: "cut" | "copy" | "paste") {
+  const { from, to } = view.state.selection.main;
+  if (action === "paste") {
+    const text = await readText();
+    if (text) view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
+  } else if (from !== to) {
+    await writeText(view.state.sliceDoc(from, to));
+    if (action === "cut") view.dispatch(view.state.replaceSelection(""));
+  }
+  view.focus();
+}
+
+function requestQuit() {
+  confirmDiscard("Quitter Schreibdrang", "Abandonner et quitter", () => {
+    getCurrentWindow().close();
+  });
+}
+
+const ACTIONS: Record<string, () => void> = {
+  "file-new": requestNewDocument,
+  "file-open": requestOpenDocument,
+  "file-save": saveDocument,
+  "file-save-as": saveDocumentAs,
+  "file-export": () => btnExport.click(),
+  "file-test": loadTestText,
+  "file-quit": requestQuit,
+  "edit-undo": () => undo(view),
+  "edit-redo": () => redo(view),
+  "edit-cut": () => editClipboard("cut"),
+  "edit-copy": () => editClipboard("copy"),
+  "edit-paste": () => editClipboard("paste"),
+  "edit-select-all": () => selectAll(view),
+  "edit-settings": openSettings,
+  "view-home": () => show("home"),
+  "view-text": () => show("text"),
+  "view-board": () => show("board"),
+  "view-fullscreen": toggleFullscreen,
+  "help-about": openAbout,
+};
+
+// Un raccourci peut arriver deux fois, par le menu natif et par la page :
+// la même action n'est exécutée qu'une fois par quart de seconde.
+let lastAction = "";
+let lastActionTime = 0;
+
+function runAction(id: string) {
+  const now = performance.now();
+  if (id === lastAction && now - lastActionTime < 250) return;
+  lastAction = id;
+  lastActionTime = now;
+  // Une boîte de dialogue ouverte suspend les actions du menu.
+  if (document.querySelector("dialog[open]")) return;
+  ACTIONS[id]?.();
+}
+
+listen<string>("menu", (event) => runAction(event.payload));
 
 fillIcons(document);
 
