@@ -10,6 +10,8 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { fillIcons } from "./icons";
 import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
+import { addRecent, loadRecents, removeRecent, saveRecents } from "./recents";
+import type { Recent } from "./recents";
 
 // Les réglages s'appliquent avant la création de l'éditeur.
 let settings: Settings = loadSettings();
@@ -617,6 +619,18 @@ function setStatus(message: string, error = false) {
   fileStatus.classList.toggle("error", error);
 }
 
+let recents: Recent[] = loadRecents();
+
+function rememberRecent(path: string) {
+  recents = addRecent(recents, path, new Date());
+  saveRecents(recents);
+}
+
+function forgetRecent(path: string) {
+  recents = removeRecent(recents, path);
+  saveRecents(recents);
+}
+
 // Remplace le texte affiché. Un nouvel état, plutôt qu'un remplacement du
 // texte : l'historique d'annulation repart de zéro et Ctrl + Z ne ramène pas
 // l'ancien texte.
@@ -656,16 +670,25 @@ function requestNewDocument() {
   });
 }
 
-async function openDocument() {
-  const path = await open({ title: "Ouvrir un texte", multiple: false, filters: TEXT_FILTERS });
-  if (typeof path !== "string") return;
+// Ouvre le fichier indiqué. Renvoie faux si la lecture a échoué ; le fichier
+// sort alors de la liste des textes récents.
+async function openPath(path: string): Promise<boolean> {
   try {
     const text = await invoke<string>("read_text_file", { path });
     loadDocument(text, path);
+    rememberRecent(path);
     setStatus(`Ouvert : ${path}`);
+    return true;
   } catch (error) {
-    setStatus(`l'ouverture a échoué (${error})`, true);
+    forgetRecent(path);
+    setStatus(`l'ouverture de ${path} a échoué (${error})`, true);
+    return false;
   }
+}
+
+async function openDocument() {
+  const path = await open({ title: "Ouvrir un texte", multiple: false, filters: TEXT_FILTERS });
+  if (typeof path === "string") await openPath(path);
 }
 
 function requestOpenDocument() {
@@ -679,6 +702,7 @@ async function writeDocument(path: string) {
   try {
     await invoke("write_text_file", { path, contents: text });
     currentPath = path;
+    rememberRecent(path);
     setDirty(view.state.doc.toString() !== text);
     setStatus(`Enregistré : ${path}`);
   } catch (error) {
