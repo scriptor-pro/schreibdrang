@@ -669,6 +669,28 @@ dialog input[type="number"] {
   width: 6rem;
 }
 
+#about-dialog h2 {
+  margin: 0.75rem 0 0;
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+#about-note {
+  margin: 0.5rem 0 1rem;
+}
+
+#about-note .asterisk {
+  width: 0.7em;
+  height: 0.7em;
+  margin: 0;
+  vertical-align: 0.15em;
+}
+
+#about-dialog .credits {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

@@ -877,6 +877,19 @@ async function openSettings() {
 // Le menu n'appelle openSettings qu'à la tâche 9.
 void openSettings;
 
+// ---------------------------------------------------------------------------
+// À propos
+// ---------------------------------------------------------------------------
+
+const aboutDialog = document.querySelector<HTMLDialogElement>("#about-dialog")!;
+
+function openAbout() {
+  if (document.querySelector("dialog[open]")) return;
+  aboutDialog.showModal();
+}
+
+void openAbout;
+
 settingsForm.addEventListener("change", () => {
   const data = new FormData(settingsForm);
   // La saisie est ramenée dans les limites ; un champ vide garde la taille actuelle.
