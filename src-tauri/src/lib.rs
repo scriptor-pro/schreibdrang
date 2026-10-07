@@ -133,6 +133,27 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     })
 }
 
+/// Noms des polices à chasse fixe installées sur l'ordinateur, triés.
+#[tauri::command]
+async fn list_monospace_fonts() -> Result<Vec<String>, String> {
+    // Le parcours des polices du système peut prendre une fraction de
+    // seconde : il tourne hors du fil principal.
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let mut names: Vec<String> = db
+            .faces()
+            .filter(|face| face.monospaced)
+            .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
+            .collect();
+        names.sort_by_key(|name| name.to_lowercase());
+        names.dedup();
+        names
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Sous Linux, WebKitGTK dessine la page par zones, certaines par le
@@ -146,7 +167,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![export_document, read_text_file, write_text_file])
+        .invoke_handler(tauri::generate_handler![export_document, read_text_file, write_text_file, list_monospace_fonts])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

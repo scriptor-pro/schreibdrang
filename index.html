@@ -75,5 +75,31 @@
         </div>
       </form>
     </dialog>
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <form method="dialog">
+        <h2 id="settings-title">Paramètres</h2>
+        <fieldset>
+          <legend>Thème</legend>
+          <label><input type="radio" name="theme" value="systeme" /> Suivre le système</label>
+          <label><input type="radio" name="theme" value="clair" /> Clair</label>
+          <label><input type="radio" name="theme" value="sombre" /> Sombre</label>
+        </fieldset>
+        <fieldset>
+          <legend>Texte</legend>
+          <label for="setting-font">Police du texte</label>
+          <select id="setting-font" name="font"></select>
+          <label for="setting-size">Taille du texte, en pixels (de 14 à 24)</label>
+          <input type="number" id="setting-size" name="size" min="14" max="24" step="1" />
+        </fieldset>
+        <fieldset>
+          <legend>Au lancement</legend>
+          <label><input type="radio" name="startup" value="accueil" /> Afficher l'accueil</label>
+          <label><input type="radio" name="startup" value="dernier" /> Rouvrir le dernier texte</label>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" value="close" class="primary">Fermer</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>

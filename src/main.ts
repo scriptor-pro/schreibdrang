@@ -8,6 +8,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { fillIcons } from "./icons";
+import { applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
+import type { Settings } from "./settings";
+
+// Les réglages s'appliquent avant la création de l'éditeur.
+let settings: Settings = loadSettings();
+applySettings(settings);
 
 // ---------------------------------------------------------------------------
 // Texte de test : environ 100 000 mots, avec accents et signes typographiques
@@ -759,6 +765,53 @@ exportDialog.addEventListener("close", async () => {
   } finally {
     btnExport.disabled = false;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Paramètres : chaque réglage s'applique dès qu'il est modifié
+// ---------------------------------------------------------------------------
+
+const settingsDialog = document.querySelector<HTMLDialogElement>("#settings-dialog")!;
+const settingsForm = settingsDialog.querySelector("form")!;
+const fontSelect = document.querySelector<HTMLSelectElement>("#setting-font")!;
+const sizeInput = document.querySelector<HTMLInputElement>("#setting-size")!;
+
+function fillFontSelect(fonts: string[]) {
+  const names = settings.font && !fonts.includes(settings.font) ? [settings.font, ...fonts] : fonts;
+  fontSelect.replaceChildren(new Option("Courier Prime (par défaut)", ""), ...names.map((name) => new Option(name, name)));
+  fontSelect.value = settings.font;
+}
+
+async function openSettings() {
+  if (document.querySelector("dialog[open]")) return;
+  for (const radio of settingsForm.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+    radio.checked = radio.value === settings[radio.name as "theme" | "startup"];
+  }
+  sizeInput.value = String(settings.size);
+  fillFontSelect([]);
+  settingsDialog.showModal();
+  try {
+    fillFontSelect(await invoke<string[]>("list_monospace_fonts"));
+  } catch (error) {
+    setStatus(`la liste des polices n'a pas pu être établie (${error})`, true);
+  }
+}
+
+// Le menu n'appelle openSettings qu'à la tâche 9.
+void openSettings;
+
+settingsForm.addEventListener("change", () => {
+  const data = new FormData(settingsForm);
+  settings = normalizeSettings({
+    theme: data.get("theme"),
+    font: data.get("font"),
+    size: Number(data.get("size")),
+    startup: data.get("startup"),
+  });
+  saveSettings(settings);
+  applySettings(settings);
+  // La police ou la taille ont pu changer : l'éditeur remesure ses lignes.
+  view.requestMeasure();
 });
 
 fillIcons(document);

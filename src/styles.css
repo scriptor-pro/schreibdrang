@@ -518,6 +518,20 @@ dialog button.primary,
   color: var(--on-accent);
 }
 
+dialog select,
+dialog input[type="number"] {
+  font: inherit;
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--ink);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+dialog input[type="number"] {
+  width: 6rem;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
