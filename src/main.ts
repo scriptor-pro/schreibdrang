@@ -239,7 +239,7 @@ function createState(doc: string): EditorState {
 
 const view = new EditorView({
   parent: document.querySelector<HTMLDivElement>("#editor")!,
-  state: createState(buildText(100_000)),
+  state: createState(""),
 });
 
 scheduleCounts(view);
@@ -532,15 +532,18 @@ board.addEventListener("focusout", (event) => {
 // Navigation et plein écran
 // ---------------------------------------------------------------------------
 
+const viewHome = document.querySelector<HTMLElement>("#view-home")!;
 const viewText = document.querySelector<HTMLElement>("#view-text")!;
 const viewBoard = document.querySelector<HTMLElement>("#view-board")!;
 const btnText = document.querySelector<HTMLButtonElement>("#btn-text")!;
 const btnBoard = document.querySelector<HTMLButtonElement>("#btn-board")!;
 const btnFullscreen = document.querySelector<HTMLButtonElement>("#btn-fullscreen")!;
 
-function show(which: "text" | "board") {
+function show(which: "home" | "text" | "board") {
   release(true);
   if (which === "board") buildBoard();
+  if (which === "home") renderRecents();
+  viewHome.hidden = which !== "home";
   viewText.hidden = which !== "text";
   viewBoard.hidden = which !== "board";
   document.body.dataset.regime = which === "text" ? "ecriture" : "affiche";
@@ -792,6 +795,56 @@ exportDialog.addEventListener("close", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Écran d'accueil
+// ---------------------------------------------------------------------------
+
+const recentsList = document.querySelector<HTMLUListElement>("#recents")!;
+const recentsEmpty = document.querySelector<HTMLParagraphElement>("#recents-empty")!;
+const dateFormat = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" });
+
+function renderRecents() {
+  recentsList.replaceChildren(
+    ...recents.map((recent) => {
+      const parts = recent.path.split(/[\\/]/);
+      const name = document.createElement("strong");
+      name.textContent = parts.pop() ?? recent.path;
+      const folder = document.createElement("small");
+      folder.textContent = parts.join("/") || "/";
+      const time = document.createElement("time");
+      time.dateTime = recent.date;
+      time.textContent = dateFormat.format(new Date(recent.date));
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "recent";
+      button.append(name, time, folder);
+      button.addEventListener("click", () => {
+        confirmDiscard("Ouvrir un texte", "Abandonner et ouvrir", async () => {
+          // Un fichier disparu sort de la liste : l'accueil est redessiné.
+          if (!(await openPath(recent.path))) renderRecents();
+        });
+      });
+      const item = document.createElement("li");
+      item.append(button);
+      return item;
+    }),
+  );
+  recentsEmpty.hidden = recents.length > 0;
+}
+
+function loadTestText() {
+  confirmDiscard("Charger le texte de test", "Abandonner et charger", () => {
+    loadDocument(buildText(100_000), undefined);
+    setStatus("Texte de test chargé : environ 100 000 mots.");
+  });
+}
+
+// Le menu n'appelle loadTestText qu'à la tâche 9.
+void loadTestText;
+
+document.querySelector<HTMLButtonElement>("#format-roman")!.addEventListener("click", requestNewDocument);
+document.querySelector<HTMLButtonElement>("#home-open")!.addEventListener("click", requestOpenDocument);
+
+// ---------------------------------------------------------------------------
 // Paramètres : chaque réglage s'applique dès qu'il est modifié
 // ---------------------------------------------------------------------------
 
@@ -843,4 +896,12 @@ settingsForm.addEventListener("change", () => {
 });
 
 fillIcons(document);
-view.focus();
+
+// Au lancement : l'accueil, ou le dernier texte si le réglage le demande. Si
+// ce texte ne peut pas être rouvert, l'accueil s'affiche avec l'erreur.
+async function start() {
+  const last = settings.startup === "dernier" ? recents[0] : undefined;
+  if (!last || !(await openPath(last.path))) show("home");
+}
+
+start();
