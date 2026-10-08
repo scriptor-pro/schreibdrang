@@ -95,8 +95,8 @@ def main() -> int:
             errors.append(f"styles.css : couleur hors palette {color}")
     if "data-regime=" not in HTML:
         errors.append("index.html : <body> sans data-regime")
-    if "dataset.regime" not in SOURCES.get("main.ts", ""):
-        errors.append("main.ts : le régime n'est pas mis à jour par show()")
+    if "dataset.regime" not in SOURCES.get("app.ts", ""):
+        errors.append("app.ts : le régime n'est pas mis à jour par show()")
 
     for line in errors:
         print("ÉCHEC", line)

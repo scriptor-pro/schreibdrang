@@ -2,30 +2,33 @@
 
 \* le besoin impérieux d'écrire
 
-Schreibdrang est une app de bureau pour écrire de la fiction : roman, nouvelle, scénario, pièce de théâtre, et un format libre sans réglages. Elle est francophone, elle n'utilise aucune IA, et c'est un logiciel libre, distribué sous licence GPL 3.
+Schreibdrang est une app de bureau pour écrire de la fiction : roman, nouvelle, scénario, pièce de théâtre, et un format libre sans réglages. Elle est francophone, elle n'utilise aucune IA, et c'est un logiciel libre, distribué sous licence GPL 3 ou ultérieure.
 
 Ce dépôt contient le **prototype** : une version de travail qui sert à valider les choix techniques et l'identité visuelle. Ce n'est pas encore l'app.
 
 ## État du prototype
 
-Version 0.0.31, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.32, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
 - **Écriture** d'un texte au format roman (chapitres en `#`, scènes en `##`), en Courier Prime, avec le compte des caractères et des mots.
+- **Format vanilla** : un texte d'un seul tenant, sans réglages propres et sans cork board. Le format d'un texte est retenu avec la liste des textes récents ; un fichier inconnu s'ouvre comme un roman.
 - **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
-- **Export** en PDF, Word (.docx), OpenDocument (.odt), Markdown et texte brut.
+- **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
+- **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
+- **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : les formats nouvelle, scénario, théâtre et vanilla, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import.
+Ce qui n'existe pas encore : les formats nouvelle, scénario et théâtre, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import.
 
 ## Prérequis
 
 - [Node.js](https://nodejs.org/) 24 ou plus récent (les tests s'appuient sur l'exécution directe du TypeScript).
 - [Rust](https://www.rust-lang.org/) et les [dépendances système de Tauri 2](https://tauri.app/start/prerequisites/) (sous Debian : WebKitGTK 4.1 et ses bibliothèques de développement).
-- Pour l'export : [pandoc](https://pandoc.org/) et, pour le PDF, XeLaTeX.
+- Pour l'export : [pandoc](https://pandoc.org/) et, pour le PDF et la page de couverture, XeLaTeX.
 
 ## Compiler et lancer
 
@@ -56,9 +59,12 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | Chemin | Rôle |
 |---|---|
 | `index.html` | la page : barre, accueil, vues, boîtes de dialogue |
-| `src/main.ts` | éditeur, cork board, fichiers, export, accueil, actions du menu |
+| `src/main.ts` | lancement : accueil complété tout de suite, puis chargement de l'app |
+| `src/app.ts` | éditeur, cork board, fichiers, export, dialogues, actions du menu |
+| `src/home.ts` | liste des textes récents de l'accueil |
 | `src/settings.ts` | réglages : valeurs, validation, stockage |
 | `src/recents.ts` | liste des textes récents |
+| `src/cover.ts` | champs de la page de couverture d'un scénario |
 | `src/outline.ts` | découpage du texte en chapitres et en scènes, pour le cork board |
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |

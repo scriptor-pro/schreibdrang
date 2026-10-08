@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Télécharge les polices du prototype depuis fonts.bunny.net.
 
-- Courier Prime (affichage) : fichiers woff2 copiés tels quels dans src/fonts/.
+- Courier Prime (affichage) : fichiers woff2 copiés tels quels dans src/fonts/ ;
+  le romain est aussi converti en TrueType pour la couverture d'un scénario.
 - Jost (interface) : fichiers woff2 copiés tels quels dans src/fonts/.
 - Literata (export) : fonts.bunny.net ne fournit que des woff2 découpés par
   jeu de caractères ; ils sont convertis et fusionnés en un fichier TrueType
@@ -61,6 +62,20 @@ def main() -> None:
                 name = f"courier-prime-{subset}-{weight}-{style}.woff2"
                 (WEB_DIR / name).write_bytes(download("courier-prime", subset, weight, style))
                 print("page   ", name)
+
+        # La couverture d'un scénario est composée en Courier Prime : le moteur
+        # PDF a besoin d'un TrueType, fusionné à partir des mêmes fichiers.
+        parts = []
+        for subset in SUBSETS:
+            font = TTFont(WEB_DIR / f"courier-prime-{subset}-400-normal.woff2")
+            font.flavor = None
+            path = TMP_DIR / f"courier-prime-{subset}-400-normal.ttf"
+            font.save(path)
+            parts.append(str(path))
+        merged = Merger().merge(parts)
+        target = EXPORT_DIR / "CourierPrime-Regular.ttf"
+        merged.save(target)
+        print("export ", target.name, f"({len(merged.getBestCmap())} caractères)")
 
     # Literata : un TrueType par style, pour l'export.
     if "literata" in wanted:
