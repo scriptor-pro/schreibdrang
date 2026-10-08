@@ -1,6 +1,6 @@
 import { minimalSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
-import { Decoration, EditorView, MatchDecorator, ViewPlugin } from "@codemirror/view";
+import { Decoration, EditorView, MatchDecorator, ViewPlugin, drawSelection } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -201,6 +201,8 @@ function createState(doc: string): EditorState {
     doc,
     extensions: [
       minimalSetup,
+      // Aucune animation : le curseur ne clignote pas.
+      drawSelection({ cursorBlinkRate: 0 }),
       markdown(),
       syntaxHighlighting(textHighlight),
       EditorView.lineWrapping,
@@ -516,6 +518,12 @@ const btnText = document.querySelector<HTMLButtonElement>("#btn-text")!;
 const btnBoard = document.querySelector<HTMLButtonElement>("#btn-board")!;
 const btnFullscreen = document.querySelector<HTMLButtonElement>("#btn-fullscreen")!;
 
+// Enregistrer et exporter n'ont pas d'objet sur l'accueil tant qu'il n'y a
+// aucun texte : ni fichier ouvert, ni texte saisi.
+function nothingToSave(): boolean {
+  return !viewHome.hidden && !currentPath && view.state.doc.length === 0;
+}
+
 function show(which: "home" | "text" | "board") {
   release(true);
   if (which === "board") buildBoard();
@@ -526,7 +534,12 @@ function show(which: "home" | "text" | "board") {
   document.body.dataset.regime = which === "text" ? "ecriture" : "affiche";
   btnText.classList.toggle("active", which === "text");
   btnBoard.classList.toggle("active", which === "board");
+  for (const button of [btnSave, btnSaveAs, btnExport]) button.disabled = nothingToSave();
   if (which !== "text") view.contentDOM.blur();
+  // Le focus clavier arrive sur l'action principale de l'accueil, ou sur le
+  // premier chapitre du cork board.
+  if (which === "home") viewHome.querySelector<HTMLElement>("#home-open")?.focus();
+  if (which === "board") board.querySelector<HTMLElement>(".chapter > h2")?.focus();
   if (which === "text") {
     view.focus();
     if (movedHeading) {
@@ -788,7 +801,7 @@ exportDialog.addEventListener("close", async () => {
   } catch (error) {
     setStatus(`l'export a échoué (${error})`, true);
   } finally {
-    btnExport.disabled = false;
+    btnExport.disabled = nothingToSave();
   }
 });
 
@@ -887,6 +900,13 @@ settingsForm.addEventListener("change", () => {
   view.requestMeasure();
 });
 
+// Entrée dans le champ Taille valide la saisie sans fermer la boîte.
+sizeInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  sizeInput.dispatchEvent(new Event("change", { bubbles: true }));
+});
+
 // ---------------------------------------------------------------------------
 // À propos
 // ---------------------------------------------------------------------------
@@ -958,6 +978,10 @@ const ACTIONS: Record<string, () => void> = {
   "help-about": openAbout,
 };
 
+// Actions du menu Fichier sans objet tant qu'il n'y a aucun texte ; leurs
+// boutons sont alors désactivés.
+const NEEDS_TEXT = new Set(["file-save", "file-save-as", "file-export"]);
+
 // Un raccourci peut arriver deux fois, par le menu natif et par la page :
 // la même action n'est exécutée qu'une fois par quart de seconde.
 let lastAction = "";
@@ -974,6 +998,10 @@ function runAction(id: string) {
   // si la vue Texte est affichée.
   if (id.startsWith("edit-") && id !== "edit-settings" && viewText.hidden) {
     setStatus("Cette commande agit sur le texte : affiche d'abord la vue Texte.");
+    return;
+  }
+  if (NEEDS_TEXT.has(id) && nothingToSave()) {
+    setStatus("Il n'y a pas encore de texte : crée ou ouvre d'abord un texte.");
     return;
   }
   ACTIONS[id]?.();

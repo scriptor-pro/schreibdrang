@@ -89,7 +89,7 @@ def main() -> int:
         if re.search(r"https?://(?!www\.w3\.org)", source):
             errors.append(f"{name} contient une adresse réseau")
     colors = set(re.findall(r"#[0-9a-fA-F]{3,8}\b", CSS)) | set(re.findall(r"rgba?\([^)]*\)", CSS))
-    allowed = {v for theme in EXPECTED.values() for v in theme.values()} | {"rgba(0, 0, 0, 0.4)"}
+    allowed = {v for theme in EXPECTED.values() for v in theme.values()}
     for color in sorted(colors):
         if color.upper() not in allowed and color not in allowed:
             errors.append(f"styles.css : couleur hors palette {color}")

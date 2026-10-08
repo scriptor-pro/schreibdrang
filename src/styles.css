@@ -223,7 +223,7 @@ body {
   align-items: center;
   gap: 0.4rem;
   font: inherit;
-  font-size: 0.8125rem;
+  font-weight: 700;
   min-height: 28px;
   padding: 0.25rem 0.75rem;
   border: 1px solid var(--ink);
@@ -232,9 +232,9 @@ body {
   cursor: pointer;
 }
 
-/* La vue en cours : texte gras et barre d'accent, jamais la couleur seule. */
+/* La vue en cours : une barre d'accent, plus épaisse que la bordure, jamais
+   la couleur seule. */
 #toolbar button.active {
-  font-weight: 700;
   border-bottom: 4px solid var(--accent);
 }
 
@@ -313,7 +313,13 @@ body.whole-screen .cm-editor .cm-content {
   white-space: nowrap;
 }
 
+/* Une erreur se lit en entier : elle prend la place restante et passe sur
+   plusieurs lignes, y compris au milieu d'un long chemin de fichier. */
 #export-status.error {
+  flex: 1 1 0;
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--error);
   font-weight: 700;
 }
@@ -348,7 +354,7 @@ body.whole-screen #home {
 
 #home h1 {
   margin: 0;
-  font-size: 2.75rem;
+  font-size: 3.5rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -596,8 +602,14 @@ dialog {
   min-width: 26rem;
 }
 
+/* Pas de voile coloré : derrière une boîte de dialogue, la page s'estompe
+   vers son propre fond, dans les deux thèmes. */
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.4);
+  background: transparent;
+}
+
+body:has(dialog[open]) > :not(dialog) {
+  opacity: 0.35;
 }
 
 dialog h2 {

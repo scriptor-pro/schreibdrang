@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.3, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.31, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
@@ -82,7 +82,7 @@ Les polices et les pictogrammes sont embarqués dans l'app : rien n'est chargé 
 
 ## Licence
 
-Schreibdrang est un logiciel libre, distribué sous la licence publique générale GNU, version 3 (GPL 3). Le texte complet de la licence se trouve dans le fichier [`LICENSE`](LICENSE).
+Schreibdrang est un logiciel libre, distribué sous la licence publique générale GNU, version 3 ou toute version ultérieure (GPL 3 ou ultérieure). Le texte complet de la licence se trouve dans le fichier [`LICENSE`](LICENSE).
 
 Composants tiers embarqués, sous leurs propres licences :
 
