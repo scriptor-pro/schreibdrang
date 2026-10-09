@@ -2837,7 +2837,7 @@ dependencies = [
 
 [[package]]
 name = "schreibdrang-prototype"
-version = "0.0.33"
+version = "0.0.34"
 dependencies = [
  "fontdb",
  "serde",

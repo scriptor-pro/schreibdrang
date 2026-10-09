@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.33, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.34, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
@@ -68,6 +68,7 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/cover.ts` | page de couverture d'un scénario, page de titre Fountain |
 | `src/fountain.ts` | scénario en Fountain : nature des lignes, découpage en scènes |
 | `src/pagination.ts` | découpage d'un scénario en pages |
+| `src/dates.ts` | dates en toutes lettres, message d'enregistrement |
 | `src/outline.ts` | découpage du texte en chapitres et en scènes, pour le cork board |
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |

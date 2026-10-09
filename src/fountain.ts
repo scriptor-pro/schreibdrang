@@ -18,7 +18,9 @@ export type LineKind =
   | "pagebreak"
   | "action";
 
-const SCENE = /^(INT\.?\/EXT|INT|EXT|EST|I\/E)[. ]/i;
+// « EST. », que Fountain admet aussi, n'ouvre pas un intitulé : « est » est
+// un mot courant en français.
+const SCENE = /^(INT\.?\/EXT|INT|EXT|I\/E)[. ]/i;
 const FORCED_SCENE = /^\.[^.\s]/;
 // Clés usuelles d'une page de titre. Une phrase qui se termine par « : »
 // (« Elle lit : ») n'en ouvre pas une.
@@ -47,9 +49,18 @@ export function isSceneHeading(line: string): boolean {
   return SCENE.test(line) || FORCED_SCENE.test(line);
 }
 
-// Le texte d'un intitulé de scène, sans le point qui le force.
+// Le texte d'un intitulé de scène, sans le point qui le force. Un intitulé
+// est toujours montré en majuscules, quoi qu'on ait tapé.
 export function sceneTitle(heading: string): string {
-  return FORCED_SCENE.test(heading) ? heading.slice(1) : heading;
+  return (FORCED_SCENE.test(heading) ? heading.slice(1) : heading).toUpperCase();
+}
+
+// Le scénario, ses intitulés de scène mis en majuscules : le texte exporté.
+// Le fichier enregistré garde, lui, ce qui a été tapé.
+export function upperCaseSceneHeadings(text: string): string {
+  const lines = text.split("\n");
+  const kinds = classifyLines(lines);
+  return lines.map((line, index) => (kinds[index] === "scene" ? line.toUpperCase() : line)).join("\n");
 }
 
 export function hasTitlePage(text: string): boolean {
@@ -84,7 +95,9 @@ export function classifyLines(lines: string[]): LineKind[] {
       kinds.push("transition");
     } else if (line.startsWith("!")) {
       kinds.push("action");
-    } else if (isSceneHeading(line) && blank(index - 1) && blank(index + 1)) {
+    } else if (isSceneHeading(line) && blank(index - 1)) {
+      // Fountain demande aussi une ligne vide après l'intitulé ; ici, l'action
+      // tapée juste dessous ne lui retire pas sa nature.
       kinds.push("scene");
     } else if (isUpperCase(line) && /:$/.test(line) && blank(index - 1) && blank(index + 1)) {
       // « CUT TO: », « COUPE À : », « FONDU ENCHAÎNÉ : ».

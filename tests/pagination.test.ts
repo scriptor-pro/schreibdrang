@@ -169,6 +169,7 @@ test("un long scénario imprimé a les pages de l'éditeur, aucune ne déborde n
     if (index % 7 === 0) blocks.push(`INT. LIEU ${index} - JOUR`);
     if (index % 31 === 30) blocks.push("===");
     if (index % 3 === 0) blocks.push(`PERSONNAGE ${index}\n(à part)\n${"réplique ".repeat(5 + (index % 40)).trim()}`);
+    else if (index % 5 === 0) blocks.push("*action* **forte** ".repeat(3 + (index % 30)).trim());
     else blocks.push("action ".repeat(3 + (index % 60)).trim());
     if (index % 11 === 0) blocks.push("COUPE À :");
   }
@@ -229,4 +230,53 @@ test("l'italique se poursuit quand le paragraphe passe à la ligne", () => {
   assert.equal(page.length, 2);
   for (const line of page) assert.deepEqual(line.map((run) => run.style), ["i"]);
   assert.equal(page.map(lineText).join(" "), "mot ".repeat(20).trim());
+});
+
+test("à l'impression, l'intitulé de scène est en majuscules, quoi qu'on ait tapé", () => {
+  assert.deepEqual(printed("int. cuisine d'élise - jour\n\n.le pont\n\nÉlise entre."), [
+    ["INT. CUISINE D'ÉLISE - JOUR", "", "LE PONT", "", "Élise entre."],
+  ]);
+  assert.deepEqual(printedRuns("Int. *nautilus* - nuit\n\nRien.")[0][0], [
+    { text: "INT. ", style: "b" },
+    { text: "NAUTILUS", style: "bi" },
+    { text: " - NUIT", style: "b" },
+  ]);
+});
+
+test("les marques qui ne s'impriment pas ne comptent pas dans la largeur d'une ligne", () => {
+  // Sans marque : « abcde fghi » fait 10 caractères, « jkl » passe à la ligne.
+  assert.deepEqual(wrapOffsets("abcde fghi jkl", 10), [0, 11]);
+  // Les quatre étoiles ne s'impriment pas : la coupure reste après « fghi ».
+  const text = "**abcde** fghi jkl";
+  const printedMask = [...text].map((character) => character !== "*");
+  assert.deepEqual(wrapOffsets(text, 10, printedMask), [0, 15]);
+  // Si elles comptaient, « fghi » passerait à la ligne.
+  assert.deepEqual(wrapOffsets(text, 10), [0, 10]);
+  // Un mot plus long que la ligne est coupé après autant de caractères imprimés.
+  const long = "*abcdefghijkl*";
+  assert.deepEqual(wrapOffsets(long, 10, [...long].map((character) => character !== "*")), [0, 11]);
+});
+
+test("à l'impression, une ligne mise en valeur est aussi longue qu'une autre", () => {
+  // Quinze mots en italique : 59 caractères imprimés, 89 tapés.
+  const words = "mot ".repeat(15).trim();
+  assert.deepEqual(printed("*mot* ".repeat(15).trim()), [[words]]);
+  assert.deepEqual(printed(`**${words}**`), [[words]]);
+  // Le point d'exclamation qui force l'action ne s'imprime pas non plus.
+  assert.deepEqual(printed(`!${"x".repeat(60)}`), [["x".repeat(60)]]);
+  // La page est calculée de la même façon : trois lignes, et non quatre.
+  const paragraph = `${"*mot* ".repeat(15).trim()} ${"*mot* ".repeat(15).trim()} ${"*mot* ".repeat(15).trim()}`;
+  assert.deepEqual(pages(paragraph, 3), []);
+  assert.equal(printed(paragraph)[0].length, 3);
+});
+
+test("une ligne vide suit toujours l'intitulé de scène, même si elle n'a pas été tapée", () => {
+  assert.deepEqual(printed("int. cuisine - jour\nUne magnifique cuisine.\n\nÉlise entre."), [
+    ["INT. CUISINE - JOUR", "", "Une magnifique cuisine.", "", "Élise entre."],
+  ]);
+  // Tapée, elle n'est pas doublée.
+  assert.deepEqual(printed("int. cuisine - jour\n\nUne magnifique cuisine."), [["INT. CUISINE - JOUR", "", "Une magnifique cuisine."]]);
+  // Elle compte dans la page : intitulé, ligne vide, « Un. » remplissent trois lignes.
+  assert.deepEqual(pages("INT. A\nUn.\n\nDeux.", 3), [{ line: 3, offset: 0 }]);
+  assert.deepEqual(printed("INT. A\nUn.\n\nDeux.", 3), [["INT. A", "", "Un."], ["Deux."]]);
 });

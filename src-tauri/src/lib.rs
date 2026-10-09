@@ -415,6 +415,14 @@ async fn export_cover(path: String, cover: Cover) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+/// Dernier enregistrement d'un fichier, en millisecondes depuis 1970.
+#[tauri::command]
+fn file_modified(path: String) -> Result<u64, String> {
+    let modified = fs::metadata(&path).and_then(|metadata| metadata.modified()).map_err(|e| e.to_string())?;
+    let since = modified.duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?;
+    Ok(since.as_millis() as u64)
+}
+
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| e.to_string())
@@ -584,6 +592,7 @@ pub fn run() {
             export_cover,
             export_screenplay,
             read_text_file,
+            file_modified,
             write_text_file,
             list_monospace_fonts,
             set_menu_item_enabled,
@@ -721,5 +730,15 @@ mod tests {
         assert!(fs::read(&path).expect("le PDF existe").starts_with(b"%PDF"));
         let titled = cover(vec![represented()]);
         assert_eq!(screenplay_pdf(&path, &pages, Some(&titled)).expect("le PDF est créé"), 4);
+    }
+
+    #[test]
+    fn un_fichier_qu_on_vient_d_ecrire_date_de_maintenant() {
+        let path = std::env::temp_dir().join("schreibdrang-test-date.txt");
+        fs::write(&path, "texte").expect("le fichier est écrit");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let modified = file_modified(path.to_string_lossy().into_owned()).expect("la date est lue");
+        assert!(now.abs_diff(modified) < 60_000);
+        assert!(file_modified("/aucun/fichier/ici".into()).is_err());
     }
 }

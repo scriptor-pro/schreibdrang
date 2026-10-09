@@ -25,9 +25,17 @@ import type { Settings } from "./settings";
 import { addRecent, formatOf, loadRecents, removeRecent, saveRecents } from "./recents";
 import type { Format, Recent } from "./recents";
 import { AUTHOR_FIELDS, loadCover, missingFields, normalizeAuthor, normalizeCover, saveCover, titlePage } from "./cover";
-import { classifyLines, couldBeCharacter, hasTitlePage, parseScreenplay, sceneTitle as screenplaySceneTitle } from "./fountain";
+import {
+  classifyLines,
+  couldBeCharacter,
+  hasTitlePage,
+  parseScreenplay,
+  sceneTitle as screenplaySceneTitle,
+  upperCaseSceneHeadings,
+} from "./fountain";
 import type { LineKind } from "./fountain";
-import { pageAt, paginate, printedPages } from "./pagination";
+import { savedMessage } from "./dates";
+import { pageAt, paginate, printedPages, printedStyles } from "./pagination";
 import type { PageBreak } from "./pagination";
 import type { Author, AuthorField, Cover, Missing } from "./cover";
 
@@ -245,6 +253,8 @@ const FOUNTAIN_LINES = Object.fromEntries(
   ).map((kind) => [kind, Decoration.line({ class: `cm-fountain-${kind}` })]),
 );
 
+const TIGHT_SCENE = Decoration.line({ class: "cm-fountain-scene cm-fountain-scene-tight" });
+
 // Coupure de page : un filet, et le numéro de la page qui commence, à droite
 // et suivi d'un point. La première page n'en a pas.
 class PageBreakWidget extends WidgetType {
@@ -353,9 +363,72 @@ const fountainLines = ViewPlugin.fromClass(
           if (line.from === entry.character) kind = "character";
           else if (line.from === entry.dialogue && kind !== "parenthetical") kind = "dialogue";
           else if (entry.dialogue !== null && line.to + 1 === entry.dialogue && couldBeCharacter(line.text)) kind = "character";
-          const decoration = FOUNTAIN_LINES[kind];
+          // Un intitulé suivi directement de texte : la ligne vide qui le
+          // suit sur la page est montrée, sans être écrite dans le texte.
+          const tight = kind === "scene" && line.number < view.state.doc.lines && view.state.doc.line(line.number + 1).text.trim() !== "";
+          const decoration = tight ? TIGHT_SCENE : FOUNTAIN_LINES[kind];
           if (decoration) builder.add(line.from, line.from, decoration);
           pos = line.to + 1;
+        }
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+// Italique et gras de Fountain : le passage entre étoiles est mis en valeur,
+// et les marques qui ne s'impriment pas (étoiles, « > », « ! », « @ », point
+// d'un intitulé forcé) sont masquées, de sorte que les lignes de l'éditeur
+// sont celles de la page. Elles restent visibles sur la ligne du curseur,
+// pour pouvoir les corriger.
+const FOUNTAIN_STYLES = {
+  b: Decoration.mark({ class: "cm-fountain-b" }),
+  i: Decoration.mark({ class: "cm-fountain-i" }),
+  bi: Decoration.mark({ class: "cm-fountain-b cm-fountain-i" }),
+};
+const HIDDEN_MARK = Decoration.replace({});
+
+const fountainEmphasis = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet) this.decorations = this.build(update.view);
+    }
+    build(view: EditorView): DecorationSet {
+      const { state } = view;
+      const { kinds } = state.field(screenplayLayout);
+      const edited = new Set<number>();
+      for (const range of state.selection.ranges) {
+        const last = state.doc.lineAt(range.to).number;
+        for (let number = state.doc.lineAt(range.from).number; number <= last; number += 1) edited.add(number);
+      }
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to; ) {
+          const line = state.doc.lineAt(pos);
+          pos = line.to + 1;
+          const kind = kinds[line.number - 1];
+          // Les étoiles ne mettent en valeur que ce qui s'imprime.
+          if (!["scene", "action", "character", "parenthetical", "dialogue", "transition", "centered"].includes(kind)) continue;
+          if (!/[*>!@.]/.test(line.text)) continue;
+          const styles = printedStyles(line.text, kind);
+          const first = line.text.length - line.text.trimStart().length;
+          const end = line.text.trimEnd().length;
+          for (let at = first; at < end; ) {
+            const style = styles[at];
+            let next = at + 1;
+            while (next < end && styles[next] === style) next += 1;
+            if (style === undefined) {
+              if (!edited.has(line.number)) builder.add(line.from + at, line.from + next, HIDDEN_MARK);
+            } else if (style !== "") {
+              builder.add(line.from + at, line.from + next, FOUNTAIN_STYLES[style]);
+            }
+            at = next;
+          }
         }
       }
       return builder.finish();
@@ -418,7 +491,54 @@ const dialogueKeys = Prec.high(
         const blankAbove = line.number === 1 || state.doc.line(line.number - 1).text.trim() === "";
         const name = text !== "" && (entry.character === line.from || (couldBeCharacter(text) && blankAbove && selection.head === line.to));
         const parenthetical = /^\(.*\)$/.test(text) && afterCharacter(state, line.number);
+        // Entrée à la fin d'un intitulé de scène : une ligne vide le sépare
+        // de ce qui suit, comme le demande Fountain.
+        if (state.field(screenplayLayout).kinds[line.number - 1] === "scene" && selection.head === line.to) {
+          view.dispatch({
+            changes: { from: line.to, insert: "\n\n" },
+            selection: { anchor: line.to + 2 },
+            scrollIntoView: true,
+            userEvent: "input",
+          });
+          return true;
+        }
+        // Entrée à la fin d'une réplique : le dialogue est terminé. Une ligne
+        // vide le sépare de la suite, qui est de l'action ; Tab en fait le
+        // nom du personnage qui répond.
+        const kind = state.field(screenplayLayout).kinds[line.number - 1];
+        const reply = !name && !parenthetical && text !== "" && (kind === "dialogue" || entry.dialogue === line.from);
+        if (reply && selection.head === line.to) {
+          view.dispatch({
+            changes: { from: line.to, insert: "\n\n" },
+            selection: { anchor: line.to + 2 },
+            effects: setDialogueEntry.of(NO_ENTRY),
+            scrollIntoView: true,
+            userEvent: "input",
+          });
+          return true;
+        }
         if (!name && !parenthetical) return false;
+        view.dispatch({
+          changes: { from: line.to, insert: "\n" },
+          selection: { anchor: line.to + 1 },
+          effects: setDialogueEntry.of({ character: null, dialogue: line.to + 1 }),
+          scrollIntoView: true,
+          userEvent: "input",
+        });
+        return true;
+      },
+    },
+    {
+      // Maj + Entrée dans une réplique : à la ligne, sans quitter le dialogue.
+      key: "Shift-Enter",
+      run(view) {
+        const { state } = view;
+        const selection = state.selection.main;
+        if (!selection.empty) return false;
+        const line = state.doc.lineAt(selection.head);
+        const kind = state.field(screenplayLayout).kinds[line.number - 1];
+        const inReply = kind === "dialogue" || (state.field(dialogueEntry).dialogue === line.from && line.text.trim() !== "");
+        if (!inReply || selection.head !== line.to) return false;
         view.dispatch({
           changes: { from: line.to, insert: "\n" },
           selection: { anchor: line.to + 1 },
@@ -466,7 +586,13 @@ const dialogueInput = EditorView.inputHandler.of((view, from, to, text) => {
 // pas. Les 6 et 2 pixels sont les marges que l'éditeur donne à toute ligne.
 const fountainTheme = EditorView.theme({
   "& .cm-scroller .cm-content": { maxWidth: "calc(61.5ch + 4rem + 8px)" },
-  ".cm-fountain-scene": { fontWeight: "700" },
+  // Un intitulé de scène s'affiche en majuscules, quoi qu'on ait tapé ; le
+  // texte lui-même n'est pas modifié.
+  ".cm-fountain-scene": { fontWeight: "700", textTransform: "uppercase" },
+  // Une ligne de l'éditeur : son interligne est de 1,6.
+  ".cm-fountain-scene-tight": { paddingBottom: "1.6em" },
+  ".cm-fountain-b": { fontWeight: "700" },
+  ".cm-fountain-i": { fontStyle: "italic" },
   ".cm-fountain-character": { paddingLeft: "calc(22ch + 6px)" },
   ".cm-fountain-dialogue": { paddingLeft: "calc(10ch + 6px)", paddingRight: "calc(15ch + 2px)" },
   ".cm-fountain-parenthetical": { paddingLeft: "calc(16ch + 6px)", paddingRight: "calc(19ch + 2px)" },
@@ -521,7 +647,7 @@ function createState(doc: string): EditorState {
       // Un scénario est mis en valeur ligne par ligne ; les autres formats
       // sont du Markdown.
       currentFormat === "scenario"
-        ? [screenplayLayout, dialogueEntry, fountainLines, fountainTheme, dialogueKeys, dialogueInput]
+        ? [screenplayLayout, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, dialogueKeys, dialogueInput]
         : [markdown(), syntaxHighlighting(textHighlight)],
       EditorView.lineWrapping,
       // Les styles de l'éditeur passent par un thème : une feuille CSS ordinaire
@@ -1085,7 +1211,15 @@ async function openPath(path: string): Promise<boolean> {
     const text = await invoke<string>("read_text_file", { path });
     loadDocument(text, path, formatOf(recents, path));
     rememberRecent(path);
-    setStatus(`Ouvert : ${path}`);
+    // Le dernier enregistrement du fichier : son heure, ou sa date s'il a
+    // plus de 24 heures. Le chemin complet reste lisible au survol.
+    try {
+      const modified = await invoke<number>("file_modified", { path });
+      setStatus(savedMessage(new Date(modified), new Date(), path));
+      fileStatus.title = path;
+    } catch {
+      setStatus(`Ouvert : ${path}`);
+    }
     return true;
   } catch (error) {
     forgetRecent(path);
@@ -1112,7 +1246,10 @@ async function writeDocument(path: string) {
     currentPath = path;
     rememberRecent(path);
     setDirty(view.state.doc.toString() !== text);
-    setStatus(`Enregistré : ${path}`);
+    const now = new Date();
+    setStatus(savedMessage(now, now, path));
+    // Le chemin complet reste lisible au survol.
+    fileStatus.title = path;
   } catch (error) {
     setStatus(`l'enregistrement a échoué (${error})`, true);
   }
@@ -1197,7 +1334,7 @@ function exportName(): string {
 // de la couverture si le texte n'en a pas déjà une et si la couverture est
 // complète.
 function fountainExport(): { text: string; titled: boolean } {
-  const text = view.state.doc.toString();
+  const text = upperCaseSceneHeadings(view.state.doc.toString());
   if (hasTitlePage(text)) return { text, titled: true };
   const cover = { ...loadCover(currentPath), title: coverTitle, source: coverSource };
   if (missingFields(cover).length) return { text, titled: false };

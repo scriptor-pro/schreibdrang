@@ -2,7 +2,6 @@
 // à chasse fixe de dix caractères au pouce, 55 lignes par page, et une
 // largeur propre à chaque élément. La page de titre ne compte pas.
 
-import { sceneTitle } from "./fountain.ts";
 import type { LineKind } from "./fountain.ts";
 
 export const LINES_PER_PAGE = 55;
@@ -38,8 +37,16 @@ export interface PageBreak {
 
 // Début de chaque ligne imprimée d'un paragraphe composé à cette largeur. La
 // coupure se fait entre deux mots, ou après un trait d'union ; un mot plus
-// long que la ligne est coupé à la largeur.
-export function wrapOffsets(text: string, width: number): number[] {
+// long que la ligne est coupé à la largeur. `printed` dit, s'il est donné,
+// quels caractères s'impriment : les autres ne comptent pas dans la largeur.
+export function wrapOffsets(text: string, width: number, printed?: boolean[]): number[] {
+  // Nombre de caractères imprimés avant chaque position.
+  let before: number[] | undefined;
+  if (printed) {
+    before = [0];
+    for (let at = 0; at < text.length; at += 1) before.push(before[at] + (printed[at] ? 1 : 0));
+  }
+  const count = (from: number, to: number) => (before ? before[to] - before[from] : to - from);
   const starts = [0];
   let lineStart = 0;
   // Seules l'espace ordinaire et la tabulation séparent les mots : une espace
@@ -47,17 +54,28 @@ export function wrapOffsets(text: string, width: number): number[] {
   for (const token of text.matchAll(/[^ \t-]*-+|[^ \t-]+/g)) {
     const start = token.index;
     const end = start + token[0].length;
-    if (end - lineStart <= width) continue;
+    if (count(lineStart, end) <= width) continue;
     if (start > lineStart) {
       lineStart = start;
       starts.push(lineStart);
     }
-    while (end - lineStart > width) {
-      lineStart += width;
+    while (count(lineStart, end) > width) {
+      let next = lineStart;
+      while (count(lineStart, next) < width) next += 1;
+      lineStart = next;
       starts.push(lineStart);
     }
   }
   return starts;
+}
+
+// Les lignes d'un élément du scénario : seul ce qui s'imprime compte dans la
+// largeur, pas les marques Fountain.
+function elementStarts(text: string, kind: LineKind, width: number, styles?: (PrintedRun["style"] | undefined)[]): number[] {
+  if (text.length <= width) return [0];
+  // Sans marque ni retrait, tout s'imprime : inutile d'examiner chaque caractère.
+  if (!/^[\s>!@.]|\*/.test(text)) return wrapOffsets(text, width);
+  return wrapOffsets(text, width, (styles ?? printedStyles(text, kind)).map((style) => style !== undefined));
 }
 
 interface Item {
@@ -79,7 +97,10 @@ export function paginate(lines: string[], kinds: LineKind[], perPage = LINES_PER
     } else if (kind === "pagebreak") {
       items.push({ line, kind, starts: [] });
     } else if (WIDTHS[kind]) {
-      items.push({ line, kind, starts: wrapOffsets(text, WIDTHS[kind]) });
+      items.push({ line, kind, starts: elementStarts(text, kind, WIDTHS[kind]) });
+      // Une ligne vide suit toujours l'intitulé de scène, même si elle n'a
+      // pas été tapée ; tapée, elle n'est pas comptée deux fois.
+      if (kind === "scene") items.push({ line, kind: "blank", starts: [] });
     }
   });
 
@@ -187,13 +208,13 @@ export type PrintedLine = PrintedRun[];
 // Ce qui s'imprime de chaque caractère d'une ligne : sa graisse, ou rien
 // (`undefined`) pour une marque Fountain, qui fixe la nature de la ligne ou
 // met un passage en valeur.
-function printedStyles(text: string, kind: LineKind): (PrintedRun["style"] | undefined)[] {
+export function printedStyles(text: string, kind: LineKind): (PrintedRun["style"] | undefined)[] {
   const styles: (PrintedRun["style"] | undefined)[] = new Array(text.length).fill(undefined);
   let from = text.length - text.trimStart().length;
   let to = text.trimEnd().length;
   const first = text[from];
   if (
-    (kind === "scene" && sceneTitle(text.trim()) !== text.trim()) ||
+    (kind === "scene" && first === ".") ||
     (kind === "action" && first === "!") ||
     (kind === "character" && first === "@") ||
     ((kind === "transition" || kind === "centered") && first === ">")
@@ -261,7 +282,7 @@ export function printedPages(lines: string[], kinds: LineKind[], perPage = LINES
     const width = WIDTHS[kind];
     if (!width) return;
     const styles = printedStyles(text, kind);
-    const starts = wrapOffsets(text, width);
+    const starts = elementStarts(text, kind, width, styles);
     starts.forEach((start, index) => {
       if (next < breaks.length && breaks[next].line === line && breaks[next].offset === start) {
         next += 1;
@@ -280,8 +301,10 @@ export function printedPages(lines: string[], kinds: LineKind[], perPage = LINES
         if (style === undefined) continue;
         length += 1;
         const last = runs[runs.length - 1];
-        if (last && last.style === style) last.text += text[at];
-        else runs.push({ text: text[at], style });
+        // Un intitulé de scène s'imprime en majuscules, quoi qu'on ait tapé.
+        const character = kind === "scene" ? text[at].toUpperCase() : text[at];
+        if (last && last.style === style) last.text += character;
+        else runs.push({ text: character, style });
       }
       let indent = INDENTS[kind] ?? 0;
       if (kind === "transition") indent = Math.max(0, PAGE_WIDTH - length);
@@ -291,6 +314,8 @@ export function printedPages(lines: string[], kinds: LineKind[], perPage = LINES
       else if (indent > 0 && runs.length > 0) runs.unshift({ text: " ".repeat(indent), style: "" });
       pages[pages.length - 1].push(runs);
     });
+    // Une ligne vide suit toujours l'intitulé de scène.
+    if (kind === "scene") pages[pages.length - 1].push([]);
   });
   // Une page ne se termine pas par une ligne vide.
   for (const page of pages) while (page.length > 0 && page[page.length - 1].length === 0) page.pop();
