@@ -8,9 +8,11 @@ export interface Settings {
   // Taille du texte de l'éditeur, en pixels.
   size: number;
   startup: "accueil" | "dernier";
+  // Vrai si l'éditeur signale les espaces insécables par un petit « ° ».
+  nbsp: boolean;
 }
 
-export const DEFAULTS: Settings = { theme: "systeme", font: "", size: 17, startup: "accueil" };
+export const DEFAULTS: Settings = { theme: "systeme", font: "", size: 17, startup: "accueil", nbsp: true };
 
 export const MIN_SIZE = 14;
 export const MAX_SIZE = 24;
@@ -27,7 +29,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const rounded = typeof data.size === "number" ? Math.round(data.size) : NaN;
   const size = rounded >= MIN_SIZE && rounded <= MAX_SIZE ? rounded : DEFAULTS.size;
   const startup = data.startup === "dernier" ? "dernier" : DEFAULTS.startup;
-  return { theme, font, size, startup };
+  const nbsp = typeof data.nbsp === "boolean" ? data.nbsp : DEFAULTS.nbsp;
+  return { theme, font, size, startup, nbsp };
 }
 
 export function loadSettings(): Settings {

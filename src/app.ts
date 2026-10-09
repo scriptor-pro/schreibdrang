@@ -3,7 +3,8 @@
 
 import { minimalSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
-import { Decoration, EditorView, MatchDecorator, ViewPlugin, drawSelection, keymap } from "@codemirror/view";
+import { Decoration, EditorView, MatchDecorator, ViewPlugin, WidgetType, drawSelection, keymap } from "@codemirror/view";
+import { Compartment, Prec, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -23,7 +24,11 @@ import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, sav
 import type { Settings } from "./settings";
 import { addRecent, formatOf, loadRecents, removeRecent, saveRecents } from "./recents";
 import type { Format, Recent } from "./recents";
-import { AUTHOR_FIELDS, loadCover, missingFields, normalizeAuthor, normalizeCover, saveCover } from "./cover";
+import { AUTHOR_FIELDS, loadCover, missingFields, normalizeAuthor, normalizeCover, saveCover, titlePage } from "./cover";
+import { classifyLines, couldBeCharacter, hasTitlePage, parseScreenplay, sceneTitle as screenplaySceneTitle } from "./fountain";
+import type { LineKind } from "./fountain";
+import { pageAt, paginate, printedPages } from "./pagination";
+import type { PageBreak } from "./pagination";
 import type { Author, AuthorField, Cover, Missing } from "./cover";
 
 // Les réglages ont déjà été appliqués par main.ts.
@@ -126,7 +131,15 @@ function scheduleCounts(view: EditorView) {
   countTimer = window.setTimeout(() => {
     const text = view.state.doc.toString();
     const words = text.match(/\S+/g)?.length ?? 0;
-    countsEl.textContent = `${fmt.format(text.length)} caractères, ${fmt.format(words)} mots`;
+    let counts = `${fmt.format(text.length)} caractères, ${fmt.format(words)} mots`;
+    // Scénario : la page où se trouve le curseur, et le nombre de pages.
+    const layout = view.state.field(screenplayLayout, false);
+    if (layout) {
+      const head = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(head);
+      counts += `, page ${pageAt(layout.breaks, line.number - 1, head - line.from)} sur ${layout.breaks.length + 1}`;
+    }
+    countsEl.textContent = counts;
   }, 400);
 }
 
@@ -155,7 +168,8 @@ function recordLatency() {
 // traitements de texte. Le caractère reste dans la page (simple marquage, pas
 // de remplacement) : il garde sa largeur et empêche toujours la coupure.
 const nbspDecorator = new MatchDecorator({
-  regexp: /\u00a0/g,
+  // L'espace insécable et l'espace fine insécable.
+  regexp: /[\u00a0\u202f]/g,
   decoration: Decoration.mark({ class: "cm-nbsp" }),
 });
 
@@ -182,8 +196,12 @@ let currentPath: string | undefined;
 const filenameEl = document.querySelector<HTMLSpanElement>("#filename")!;
 
 // Format du texte affiché. Un texte vanilla est d'un seul tenant : il n'a pas
-// de cork board.
+// de cork board. Un scénario est écrit en Fountain.
 let currentFormat: Format = "roman";
+
+// Titre et œuvre d'origine saisis pour la couverture du scénario affiché.
+let coverTitle = "";
+let coverSource = "";
 
 const formatEl = document.querySelector<HTMLSpanElement>("#format")!;
 
@@ -191,6 +209,10 @@ function setFormat(format: Format) {
   currentFormat = format;
   formatEl.textContent = `Format ${FORMAT_NAMES[format]}`;
   btnBoard.disabled = format === "vanilla";
+  // Le menu Scénario n'agit qu'au format scénario.
+  invoke("set_menu_item_enabled", { id: "scenario-cover", enabled: format === "scenario" }).catch((error) => {
+    setStatus(`le menu Scénario n'a pas pu être mis à jour (${error})`, true);
+  });
 }
 
 function setDirty(value: boolean) {
@@ -213,6 +235,252 @@ const textHighlight = HighlightStyle.define([
   { tag: [tags.link, tags.url], textDecoration: "underline" },
 ]);
 
+// Scénario : chaque ligne reçoit une classe selon sa nature (intitulé de
+// scène, personnage, dialogue…), et la mise en page d'un scénario s'ensuit.
+// La nature d'une ligne dépend de ses voisines : tout le texte est relu à
+// chaque modification, mais seules les lignes visibles sont décorées.
+const FOUNTAIN_LINES = Object.fromEntries(
+  (
+    ["title", "scene", "character", "parenthetical", "dialogue", "transition", "centered", "section", "synopsis", "pagebreak"] as LineKind[]
+  ).map((kind) => [kind, Decoration.line({ class: `cm-fountain-${kind}` })]),
+);
+
+// Coupure de page : un filet, et le numéro de la page qui commence, à droite
+// et suivi d'un point. La première page n'en a pas.
+class PageBreakWidget extends WidgetType {
+  constructor(readonly page: number) {
+    super();
+  }
+  eq(other: PageBreakWidget) {
+    return other.page === this.page;
+  }
+  toDOM() {
+    const element = document.createElement("span");
+    element.className = "cm-page-break";
+    element.setAttribute("aria-label", `Page ${this.page}`);
+    const rule = document.createElement("span");
+    rule.className = "cm-page-rule";
+    const number = document.createElement("span");
+    number.className = "cm-page-number";
+    number.textContent = `${this.page}.`;
+    element.append(rule, number);
+    return element;
+  }
+}
+
+// Mise en page du scénario, recalculée à chaque modification du texte : la
+// nature de chaque ligne, et les coupures de page qui en découlent.
+interface ScreenplayLayout {
+  kinds: LineKind[];
+  breaks: PageBreak[];
+  decorations: DecorationSet;
+}
+
+function computeLayout(state: EditorState): ScreenplayLayout {
+  const lines = state.doc.toJSON();
+  const kinds = classifyLines(lines);
+  const breaks = paginate(lines, kinds);
+  const decorations = Decoration.set(
+    breaks.map((start, index) => {
+      const widget = new PageBreakWidget(index + 2);
+      const from = state.doc.line(start.line + 1).from;
+      // En début de ligne, la coupure se place entre deux lignes ; au milieu
+      // d'un paragraphe, elle s'insère dans le texte.
+      return start.offset > 0
+        ? Decoration.widget({ widget, side: -1 }).range(from + start.offset)
+        : Decoration.widget({ widget, side: -1, block: true }).range(from);
+    }),
+  );
+  return { kinds, breaks, decorations };
+}
+
+const screenplayLayout = StateField.define<ScreenplayLayout>({
+  create: computeLayout,
+  update: (value, tr) => (tr.docChanged ? computeLayout(tr.state) : value),
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+// Saisie d'un dialogue. Tab fait de la ligne en cours un nom de personnage :
+// tant que le curseur y reste, ce qu'on tape passe en capitales. Entrée ouvre
+// ensuite la ligne de dialogue. Chaque repère est le début d'une ligne ; il
+// tombe quand le curseur quitte cette ligne.
+interface DialogueEntry {
+  character: number | null;
+  dialogue: number | null;
+}
+
+const NO_ENTRY: DialogueEntry = { character: null, dialogue: null };
+const setDialogueEntry = StateEffect.define<DialogueEntry>();
+
+const dialogueEntry = StateField.define<DialogueEntry>({
+  create: () => NO_ENTRY,
+  update(value, tr) {
+    let next = value;
+    for (const effect of tr.effects) if (effect.is(setDialogueEntry)) next = effect.value;
+    if (next === value && tr.docChanged) {
+      // Les repères suivent le texte, et restent en début de ligne.
+      const follow = (pos: number | null) => (pos === null ? null : tr.state.doc.lineAt(tr.changes.mapPos(pos, -1)).from);
+      next = { character: follow(value.character), dialogue: follow(value.dialogue) };
+    }
+    const line = tr.state.doc.lineAt(tr.state.selection.main.head).from;
+    const character = next.character === line ? line : null;
+    const dialogue = next.dialogue === line ? line : null;
+    if (character === null && dialogue === null) return NO_ENTRY;
+    return character === next.character && dialogue === next.dialogue ? next : { character, dialogue };
+  },
+});
+
+const fountainLines = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(update: ViewUpdate) {
+      const entryChanged = update.startState.field(dialogueEntry) !== update.state.field(dialogueEntry);
+      if (update.docChanged || update.viewportChanged || entryChanged) this.decorations = this.build(update.view);
+    }
+    build(view: EditorView): DecorationSet {
+      const { kinds } = view.state.field(screenplayLayout);
+      const entry = view.state.field(dialogueEntry);
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to; ) {
+          const line = view.state.doc.lineAt(pos);
+          let kind = kinds[line.number - 1];
+          // Pendant la saisie d'un dialogue, le nom du personnage et la ligne
+          // de dialogue encore vide ont déjà leur mise en page.
+          if (line.from === entry.character) kind = "character";
+          else if (line.from === entry.dialogue && kind !== "parenthetical") kind = "dialogue";
+          else if (entry.dialogue !== null && line.to + 1 === entry.dialogue && couldBeCharacter(line.text)) kind = "character";
+          const decoration = FOUNTAIN_LINES[kind];
+          if (decoration) builder.add(line.from, line.from, decoration);
+          pos = line.to + 1;
+        }
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+// Vrai si la ligne suit un nom de personnage ou une didascalie : c'est là
+// que s'écrit une didascalie ou une réplique.
+function afterCharacter(state: EditorState, lineNumber: number): boolean {
+  if (lineNumber < 2) return false;
+  const previous = state.doc.line(lineNumber - 1).text;
+  if (/^\s*\(.*\)\s*$/.test(previous)) return true;
+  const blankAbove = lineNumber === 2 || state.doc.line(lineNumber - 2).text.trim() === "";
+  return couldBeCharacter(previous) && blankAbove;
+}
+
+const dialogueKeys = Prec.high(
+  keymap.of([
+    {
+      // Tab : la ligne en cours devient un nom de personnage, en capitales,
+      // précédé d'une ligne vide.
+      key: "Tab",
+      run(view) {
+        const { state } = view;
+        const head = state.selection.main.head;
+        const line = state.doc.lineAt(head);
+        const blankAbove = line.number === 1 || state.doc.line(line.number - 1).text.trim() === "";
+        const start = line.from + (blankAbove ? 0 : 1);
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert: (blankAbove ? "" : "\n") + line.text.toLocaleUpperCase("fr") },
+          selection: { anchor: start + (head - line.from) },
+          effects: setDialogueEntry.of({ character: start, dialogue: null }),
+          userEvent: "input",
+        });
+        return true;
+      },
+    },
+    {
+      // Maj + Tab quitte la saisie d'un dialogue ; sinon, le focus sort de l'éditeur.
+      key: "Shift-Tab",
+      run(view) {
+        if (view.state.field(dialogueEntry) === NO_ENTRY) return false;
+        view.dispatch({ effects: setDialogueEntry.of(NO_ENTRY) });
+        return true;
+      },
+    },
+    {
+      // Entrée après le nom du personnage, ou dans une didascalie : la ligne
+      // suivante est la ligne de dialogue.
+      key: "Enter",
+      run(view) {
+        const { state } = view;
+        const selection = state.selection.main;
+        if (!selection.empty) return false;
+        const line = state.doc.lineAt(selection.head);
+        const entry = state.field(dialogueEntry);
+        const text = line.text.trim();
+        const blankAbove = line.number === 1 || state.doc.line(line.number - 1).text.trim() === "";
+        const name = text !== "" && (entry.character === line.from || (couldBeCharacter(text) && blankAbove && selection.head === line.to));
+        const parenthetical = /^\(.*\)$/.test(text) && afterCharacter(state, line.number);
+        if (!name && !parenthetical) return false;
+        view.dispatch({
+          changes: { from: line.to, insert: "\n" },
+          selection: { anchor: line.to + 1 },
+          effects: setDialogueEntry.of({ character: null, dialogue: line.to + 1 }),
+          scrollIntoView: true,
+          userEvent: "input",
+        });
+        return true;
+      },
+    },
+  ]),
+);
+
+const dialogueInput = EditorView.inputHandler.of((view, from, to, text) => {
+  const { state } = view;
+  const line = state.doc.lineAt(from);
+  // Le nom du personnage s'écrit en capitales.
+  if (state.field(dialogueEntry).character === line.from) {
+    const upper = text.toLocaleUpperCase("fr");
+    view.dispatch({ changes: { from, to, insert: upper }, selection: { anchor: from + upper.length }, userEvent: "input.type" });
+    return true;
+  }
+  // « ( » en début de ligne, sous le nom du personnage : une paire de
+  // parenthèses, le curseur entre les deux, pour la didascalie.
+  if (text === "(" && from === to && line.text.trim() === "" && afterCharacter(state, line.number)) {
+    view.dispatch({ changes: { from, insert: "()" }, selection: { anchor: from + 1 }, userEvent: "input.type" });
+    return true;
+  }
+  // « ) » devant la parenthèse fermante déjà posée : le curseur la franchit.
+  if (text === ")" && from === to && state.sliceDoc(from, from + 1) === ")" && /^\s*\(/.test(line.text)) {
+    view.dispatch({ selection: { anchor: from + 1 } });
+    return true;
+  }
+  return false;
+});
+
+// Mise en page d'un scénario, en caractères de la police à chasse fixe (dix au
+// pouce). Le texte a la largeur de la page imprimée, pour que les lignes de
+// l'éditeur soient celles de la page et que les coupures tombent juste :
+// 60 caractères pour l'action, 35 pour le dialogue à partir du 10e, 25 pour
+// la didascalie à partir du 16e ; le nom du personnage commence au 22e. Ce
+// sont les positions habituelles, à 2,5, 3,1 et 3,7 pouces du bord de la page.
+// Chaque largeur compte un caractère et demi de plus : l'espace qui suit le
+// dernier mot d'une ligne y prend place, comme à l'impression où il ne compte
+// pas. Les 6 et 2 pixels sont les marges que l'éditeur donne à toute ligne.
+const fountainTheme = EditorView.theme({
+  "& .cm-scroller .cm-content": { maxWidth: "calc(61.5ch + 4rem + 8px)" },
+  ".cm-fountain-scene": { fontWeight: "700" },
+  ".cm-fountain-character": { paddingLeft: "calc(22ch + 6px)" },
+  ".cm-fountain-dialogue": { paddingLeft: "calc(10ch + 6px)", paddingRight: "calc(15ch + 2px)" },
+  ".cm-fountain-parenthetical": { paddingLeft: "calc(16ch + 6px)", paddingRight: "calc(19ch + 2px)" },
+  ".cm-fountain-transition": { textAlign: "right" },
+  ".cm-fountain-centered": { textAlign: "center" },
+  ".cm-fountain-section": { fontWeight: "700", color: "var(--muted)" },
+  ".cm-fountain-synopsis": { fontStyle: "italic", color: "var(--muted)" },
+  ".cm-fountain-title, .cm-fountain-pagebreak": { color: "var(--muted)" },
+  // Coupure de page : ni marge ni animation, le filet de 1 px du régime écriture.
+  ".cm-page-break": { display: "block", padding: "0.8em 2px 0.8em 6px", userSelect: "none", textIndent: "0" },
+  ".cm-page-rule": { display: "block", borderTop: "1px solid var(--ink)" },
+  ".cm-page-number": { display: "block", paddingTop: "0.4em", textAlign: "right", fontWeight: "400", fontStyle: "normal", color: "var(--muted)" },
+});
+
 // Libellés du panneau de recherche de l'éditeur.
 const SEARCH_PHRASES = {
   Find: "Chercher",
@@ -232,6 +500,9 @@ const SEARCH_PHRASES = {
   "replaced match on line $": "occurrence remplacée à la ligne $",
 };
 
+// Le repère des espaces insécables s'affiche ou se masque sans recréer l'éditeur.
+const nbspMarks = new Compartment();
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
@@ -247,8 +518,11 @@ function createState(doc: string): EditorState {
         { key: "F3", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
         { key: "Mod-g", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
       ]),
-      markdown(),
-      syntaxHighlighting(textHighlight),
+      // Un scénario est mis en valeur ligne par ligne ; les autres formats
+      // sont du Markdown.
+      currentFormat === "scenario"
+        ? [screenplayLayout, dialogueEntry, fountainLines, fountainTheme, dialogueKeys, dialogueInput]
+        : [markdown(), syntaxHighlighting(textHighlight)],
       EditorView.lineWrapping,
       // Les styles de l'éditeur passent par un thème : une feuille CSS ordinaire
       // est écrasée par les règles par défaut de CodeMirror.
@@ -327,7 +601,7 @@ function createState(doc: string): EditorState {
           pointerEvents: "none",
         },
       }),
-      showNbsp,
+      nbspMarks.of(settings.nbsp ? showNbsp : []),
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
         keydown() {
@@ -339,6 +613,9 @@ function createState(doc: string): EditorState {
         if (update.docChanged) {
           if (!dirty) setDirty(true);
           recordLatency();
+          scheduleCounts(update.view);
+        } else if (update.selectionSet && currentFormat === "scenario") {
+          // Le numéro de la page en cours suit le curseur.
           scheduleCounts(update.view);
         }
       }),
@@ -396,14 +673,16 @@ function buildBoard() {
   boardGeneration += 1;
   board.replaceChildren();
 
-  const outline = parseDocument(view.state.doc.toString());
+  const text = view.state.doc.toString();
+  const outline = currentFormat === "scenario" ? parseScreenplay(text) : parseDocument(text);
   boardPreamble = outline.preamble;
   for (const chapter of outline.chapters) {
     const column = document.createElement("div");
     column.className = "chapter";
     chapterOf.set(column, chapter);
     const heading = document.createElement("h2");
-    heading.textContent = chapter.heading.replace(/^#\s*/, "");
+    // Un scénario sans section n'a qu'une colonne, sans titre dans le texte.
+    heading.textContent = chapter.heading.replace(/^#\s*/, "") || "Scènes";
     heading.tabIndex = 0;
     heading.setAttribute("aria-roledescription", "chapitre déplaçable");
     heading.setAttribute("aria-describedby", "board-help");
@@ -420,7 +699,7 @@ function buildBoard() {
       card.setAttribute("aria-describedby", "board-help");
       sceneOf.set(card, scene);
       const h3 = document.createElement("h3");
-      h3.textContent = scene.heading.replace(/^##\s*/, "");
+      h3.textContent = currentFormat === "scenario" ? screenplaySceneTitle(scene.heading) : scene.heading.replace(/^##\s*/, "");
       const p = document.createElement("p");
       p.textContent = summary(scene.body);
       card.append(h3, p);
@@ -737,6 +1016,8 @@ const newConfirm = document.querySelector<HTMLButtonElement>("#new-confirm")!;
 const fileStatus = document.querySelector<HTMLSpanElement>("#export-status")!;
 
 const TEXT_FILTERS = [{ name: "Texte Markdown", extensions: ["md", "txt"] }];
+const FOUNTAIN_FILTERS = [{ name: "Scénario Fountain", extensions: ["fountain", "txt"] }];
+const OPEN_FILTERS = [{ name: "Texte ou scénario", extensions: ["md", "txt", "fountain"] }];
 
 function setStatus(message: string, error = false) {
   fileStatus.textContent = error ? `Erreur : ${message}` : message;
@@ -762,6 +1043,7 @@ function forgetRecent(path: string) {
 function loadDocument(text: string, path: string | undefined, format: Format) {
   movedHeading = undefined;
   setFormat(format);
+  ({ title: coverTitle, source: coverSource } = loadCover(path));
   show("text");
   view.setState(createState(text));
   currentPath = path;
@@ -813,7 +1095,7 @@ async function openPath(path: string): Promise<boolean> {
 }
 
 async function openDocument() {
-  const path = await open({ title: "Ouvrir un texte", multiple: false, filters: TEXT_FILTERS });
+  const path = await open({ title: "Ouvrir un texte", multiple: false, filters: OPEN_FILTERS });
   if (typeof path === "string") await openPath(path);
 }
 
@@ -840,8 +1122,8 @@ async function saveDocumentAs() {
   if (document.querySelector("dialog[open]")) return;
   const path = await save({
     title: "Enregistrer le texte sous",
-    defaultPath: currentPath ?? "sans-titre.md",
-    filters: TEXT_FILTERS,
+    defaultPath: currentPath ?? (currentFormat === "scenario" ? "sans-titre.fountain" : "sans-titre.md"),
+    filters: currentFormat === "scenario" ? FOUNTAIN_FILTERS : TEXT_FILTERS,
   });
   if (path) await writeDocument(path);
 }
@@ -878,15 +1160,68 @@ const FORMATS: Record<string, string> = {
   epub: "EPUB",
   md: "Markdown",
   txt: "Texte brut",
+  fountain: "Fountain",
 };
 
 const btnExport = document.querySelector<HTMLButtonElement>("#btn-export")!;
 const exportDialog = document.querySelector<HTMLDialogElement>("#export-dialog")!;
 
+const exportNote = document.querySelector<HTMLParagraphElement>("#export-note")!;
+const exportPdfFont = document.querySelector<HTMLSpanElement>("#export-pdf-font")!;
+
 btnExport.addEventListener("click", () => {
+  // Un scénario s'exporte en PDF et en Fountain ; les autres formats de
+  // texte, dans tous les formats d'export sauf ceux du scénario.
+  const scenario = currentFormat === "scenario";
+  let first: HTMLInputElement | undefined;
+  for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="format"]')) {
+    const forScenario = radio.value === "fountain" || radio.value === "fdx";
+    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario);
+    radio.parentElement!.classList.toggle("disabled", radio.disabled);
+    if (!radio.disabled) first ??= radio;
+  }
+  const checked = exportDialog.querySelector<HTMLInputElement>('input[name="format"]:checked');
+  if (first && (!checked || checked.disabled)) first.checked = true;
+  exportNote.hidden = !scenario;
+  exportPdfFont.textContent = scenario ? "en Courier Prime" : "en Literata";
   exportDialog.returnValue = "cancel";
   exportDialog.showModal();
 });
+
+// Le nom proposé pour un export : celui du fichier, sans son extension.
+function exportName(): string {
+  return currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? (currentFormat === "scenario" ? "scenario" : "roman");
+}
+
+// Texte d'un export Fountain : le scénario, précédé de la page de titre tirée
+// de la couverture si le texte n'en a pas déjà une et si la couverture est
+// complète.
+function fountainExport(): { text: string; titled: boolean } {
+  const text = view.state.doc.toString();
+  if (hasTitlePage(text)) return { text, titled: true };
+  const cover = { ...loadCover(currentPath), title: coverTitle, source: coverSource };
+  if (missingFields(cover).length) return { text, titled: false };
+  return { text: `${titlePage(cover)}\n${text}`, titled: true };
+}
+
+// La couverture, si elle est complète : elle sert de page de titre au PDF.
+function completeCover(): Cover | undefined {
+  const cover = { ...loadCover(currentPath), title: coverTitle, source: coverSource };
+  return missingFields(cover).length ? undefined : cover;
+}
+
+// PDF d'un scénario : les pages sont celles de l'éditeur, ligne pour ligne.
+// Rend le message à afficher.
+async function exportScreenplayPdf(path: string): Promise<string> {
+  const lines = view.state.doc.toJSON();
+  const cover = completeCover();
+  const count = await invoke<number>("export_screenplay", { path, pages: printedPages(lines, classifyLines(lines)), cover: cover ?? null });
+  const pages = count - (cover ? 1 : 0);
+  const size = pages > 1 ? `${pages} pages` : "1 page";
+  return cover
+    ? `Exporté, ${size} et la page de titre : ${path}`
+    : `Exporté sans page de titre, ${size} : ${path}. Pour en avoir une, crée d'abord la page de couverture (menu Scénario).`;
+}
 
 // « Annuler » n'est pas un bouton d'envoi : la touche Entrée dans la boîte
 // de dialogue déclenche ainsi « Exporter… ».
@@ -899,7 +1234,7 @@ exportDialog.addEventListener("close", async () => {
   const format = new FormData(exportDialog.querySelector("form")!).get("format") as string;
   const path = await save({
     title: "Exporter le texte",
-    defaultPath: `roman.${format}`,
+    defaultPath: `${exportName()}.${format}`,
     filters: [{ name: FORMATS[format], extensions: [format] }],
   });
   if (!path) return;
@@ -908,9 +1243,18 @@ exportDialog.addEventListener("close", async () => {
   setStatus(`Export ${FORMATS[format]} en cours…`);
   const start = performance.now();
   try {
-    await invoke("export_document", { path, format, markdown: view.state.doc.toString() });
+    if (format === "pdf" && currentFormat === "scenario") {
+      setStatus(await exportScreenplayPdf(path));
+      return;
+    }
+    const fountain = format === "fountain" ? fountainExport() : undefined;
+    await invoke("export_document", { path, format, markdown: fountain?.text ?? view.state.doc.toString() });
     const seconds = ((performance.now() - start) / 1000).toFixed(1);
-    setStatus(`Exporté en ${seconds} s : ${path}`);
+    setStatus(
+      fountain && !fountain.titled
+        ? `Exporté sans page de titre : ${path}. Pour en avoir une, crée d'abord la page de couverture (menu Scénario).`
+        : `Exporté en ${seconds} s : ${path}`,
+    );
   } catch (error) {
     setStatus(`l'export a échoué (${error})`, true);
   } finally {
@@ -1010,6 +1354,7 @@ settingsForm.addEventListener("change", () => {
     font: data.get("font"),
     size,
     startup: data.get("startup"),
+    nbsp: settings.nbsp,
   });
   sizeInput.value = String(settings.size);
   applySettings(settings);
@@ -1024,6 +1369,27 @@ sizeInput.addEventListener("keydown", (event) => {
   event.preventDefault();
   sizeInput.dispatchEvent(new Event("change", { bubbles: true }));
 });
+
+// ---------------------------------------------------------------------------
+// Repère des espaces insécables : affiché ou masqué depuis le menu Édition
+// ---------------------------------------------------------------------------
+
+// La case du menu suit le réglage, y compris au lancement.
+function syncNbspMenu() {
+  invoke("set_menu_item_checked", { id: "edit-nbsp", checked: settings.nbsp }).catch((error) => {
+    setStatus(`le menu Édition n'a pas pu être mis à jour (${error})`, true);
+  });
+}
+
+function toggleNbsp() {
+  settings = { ...settings, nbsp: !settings.nbsp };
+  saveSettings(settings);
+  view.dispatch({ effects: nbspMarks.reconfigure(settings.nbsp ? showNbsp : []) });
+  syncNbspMenu();
+  setStatus(settings.nbsp ? "Les espaces insécables sont signalées par « ° »." : "Les espaces insécables ne sont plus signalées.");
+}
+
+syncNbspMenu();
 
 // ---------------------------------------------------------------------------
 // Recherche : le panneau de l'éditeur, ouvert sur la vue Texte
@@ -1041,7 +1407,8 @@ function openSearch() {
 const coverDialog = document.querySelector<HTMLDialogElement>("#cover-dialog")!;
 const coverForm = coverDialog.querySelector("form")!;
 const coverError = document.querySelector<HTMLParagraphElement>("#cover-error")!;
-const coverTitle = document.querySelector<HTMLInputElement>("#cover-field-title")!;
+const coverTitleInput = document.querySelector<HTMLInputElement>("#cover-field-title")!;
+const coverSourceInput = document.querySelector<HTMLInputElement>("#cover-field-source")!;
 const coverAuthors = document.querySelector<HTMLDivElement>("#cover-authors")!;
 const coverAuthorTemplate = document.querySelector<HTMLTemplateElement>("#cover-author-template")!;
 const coverAdd = document.querySelector<HTMLButtonElement>("#cover-add-author")!;
@@ -1088,7 +1455,8 @@ function renderAuthors(authors: Author[]) {
 
 function readCover(): Cover {
   return normalizeCover({
-    title: coverTitle.value,
+    title: coverTitleInput.value,
+    source: coverSourceInput.value,
     authors: [...coverAuthors.children].map((block) =>
       Object.fromEntries(
         [...block.querySelectorAll<HTMLInputElement>("[data-field]")].map((input) => [input.dataset.field, input.value]),
@@ -1098,7 +1466,7 @@ function readCover(): Cover {
 }
 
 function missingInput(missing: Missing): HTMLInputElement {
-  return missing.field === "title" ? coverTitle : authorInput(missing.author, missing.field);
+  return missing.field === "title" ? coverTitleInput : authorInput(missing.author, missing.field);
 }
 
 function showCoverError(missing: Missing[]) {
@@ -1121,8 +1489,9 @@ function showCoverError(missing: Missing[]) {
 function openCover() {
   if (document.querySelector("dialog[open]")) return;
   // Le titre proposé est le nom du fichier, sans son extension.
-  coverTitle.value = currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? "";
-  renderAuthors(loadCover().authors);
+  coverTitleInput.value = coverTitle || (currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? "");
+  coverSourceInput.value = coverSource;
+  renderAuthors(loadCover(currentPath).authors);
   showCoverError([]);
   coverDialog.returnValue = "cancel";
   coverDialog.showModal();
@@ -1152,7 +1521,9 @@ document.querySelector<HTMLButtonElement>("#cover-cancel")!.addEventListener("cl
 coverDialog.addEventListener("close", async () => {
   if (coverDialog.returnValue !== "create") return;
   const cover = readCover();
-  saveCover(cover);
+  coverTitle = cover.title;
+  coverSource = cover.source;
+  saveCover(cover, currentPath);
   const path = await save({
     title: "Créer la page de couverture",
     defaultPath: "couverture.pdf",
@@ -1232,6 +1603,7 @@ const ACTIONS: Record<string, () => void> = {
   "edit-copy": () => editClipboard("copy"),
   "edit-paste": () => editClipboard("paste"),
   "edit-select-all": () => selectAll(view),
+  "edit-nbsp": toggleNbsp,
   "edit-settings": openSettings,
   "view-home": () => show("home"),
   "view-text": () => show("text"),
@@ -1259,8 +1631,12 @@ function runAction(id: string) {
   if (document.querySelector("dialog[open]")) return;
   // Les commandes d'édition agissent sur le texte : elles n'ont de sens que
   // si la vue Texte est affichée.
-  if (id.startsWith("edit-") && id !== "edit-settings" && viewText.hidden) {
+  if (id.startsWith("edit-") && id !== "edit-settings" && id !== "edit-nbsp" && viewText.hidden) {
     setStatus("Cette commande agit sur le texte : affiche d'abord la vue Texte.");
+    return;
+  }
+  if (id === "scenario-cover" && currentFormat !== "scenario") {
+    setStatus("La page de couverture est propre au format scénario.");
     return;
   }
   if (id === "view-board" && currentFormat === "vanilla") {

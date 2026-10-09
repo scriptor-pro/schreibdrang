@@ -15,6 +15,8 @@ export interface Author {
 
 export interface Cover {
   title: string;
+  // Œuvre dont le scénario est l'adaptation (« d'après… ») ; facultatif.
+  source: string;
   // Un scénario peut être écrit à plusieurs : au moins un auteur.
   authors: Author[];
 }
@@ -55,7 +57,11 @@ export function normalizeAuthor(raw: unknown): Author {
 export function normalizeCover(raw: unknown): Cover {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const authors = Array.isArray(source.authors) ? source.authors.map(normalizeAuthor) : [];
-  return { title: text(source.title), authors: authors.length ? authors : [normalizeAuthor(null)] };
+  return {
+    title: text(source.title),
+    source: text(source.source),
+    authors: authors.length ? authors : [normalizeAuthor(null)],
+  };
 }
 
 // Champs à remplir avant de créer la couverture, dans l'ordre de la boîte.
@@ -68,19 +74,55 @@ export function missingFields(cover: Cover): Missing[] {
   return missing;
 }
 
-// Les auteurs sont retenus d'une fois sur l'autre ; le titre, propre à chaque
-// scénario, ne l'est pas.
-export function loadCover(): Cover {
+// « A », « A et B », « A, B et C ».
+export function joinNames(names: string[]): string {
+  if (names.length < 2) return names.join("");
+  return `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`;
+}
+
+// Page de titre d'un fichier Fountain, tirée de la couverture. Elle ne peut
+// pas contenir de ligne vide : c'est une ligne vide qui la termine.
+export function titlePage(cover: Cover): string {
+  const contact = cover.authors.flatMap((author) => {
+    const agent = `${author.agentFirstName} ${author.agentLastName}`.trim();
+    return [
+      author.name,
+      author.email,
+      author.phone,
+      agent && `Représenté par ${agent}`,
+      author.agency,
+      author.agencyEmail,
+      author.agencyPhone,
+    ].filter(Boolean);
+  });
+  return [
+    `Title: ${cover.title}`,
+    "Credit: écrit par",
+    `Author: ${joinNames(cover.authors.map((author) => author.name))}`,
+    ...(cover.source ? [`Source: D'après ${cover.source}`] : []),
+    "Contact:",
+    ...contact.map((line) => `    ${line}`),
+    "",
+  ].join("\n");
+}
+
+// Les auteurs sont retenus d'une fois sur l'autre. Le titre et l'œuvre
+// d'origine sont propres à chaque scénario : ils ne sont rendus que pour le
+// fichier où ils ont été saisis.
+export function loadCover(path: string | undefined): Cover {
   try {
-    return { ...normalizeCover(JSON.parse(localStorage.getItem(KEY) ?? "null")), title: "" };
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const cover = normalizeCover(raw);
+    const same = Boolean(path) && raw?.titlePath === path;
+    return { ...cover, title: same ? cover.title : "", source: same ? cover.source : "" };
   } catch {
     return normalizeCover(null);
   }
 }
 
-export function saveCover(cover: Cover) {
+export function saveCover(cover: Cover, path: string | undefined) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ ...cover, title: "" }));
+    localStorage.setItem(KEY, JSON.stringify({ ...cover, titlePath: path ?? "" }));
   } catch {
     // Stockage plein ou indisponible : la couverture est créée quand même.
   }

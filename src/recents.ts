@@ -2,7 +2,7 @@
 // local. Ce module n'accède à la page que dans loadRecents et saveRecents.
 
 // Formats de texte disponibles dans le prototype.
-export type Format = "roman" | "vanilla";
+export type Format = "roman" | "vanilla" | "scenario";
 
 export interface Recent {
   path: string;
@@ -20,9 +20,11 @@ export function addRecent(list: Recent[], path: string, format: Format, now: Dat
   return [{ path, date: now.toISOString(), format }, ...removeRecent(list, path)].slice(0, MAX_RECENTS);
 }
 
-// Format retenu pour un texte ; un texte inconnu est un roman.
+// Format retenu pour un texte. Un texte inconnu est un scénario si son nom se
+// termine par « .fountain », un roman sinon.
 export function formatOf(list: Recent[], path: string): Format {
-  return list.find((recent) => recent.path === path)?.format ?? "roman";
+  const known = list.find((recent) => recent.path === path)?.format;
+  return known ?? (/\.fountain$/i.test(path) ? "scenario" : "roman");
 }
 
 export function removeRecent(list: Recent[], path: string): Recent[] {
@@ -37,7 +39,7 @@ export function normalizeRecents(raw: unknown): Recent[] {
     if (!entry || typeof entry !== "object") continue;
     const { path, date, format } = entry as Record<string, unknown>;
     if (typeof path !== "string" || !path || typeof date !== "string" || Number.isNaN(Date.parse(date))) continue;
-    list.push({ path, date, format: format === "vanilla" ? "vanilla" : "roman" });
+    list.push({ path, date, format: format === "vanilla" || format === "scenario" ? format : "roman" });
   }
   return list.slice(0, MAX_RECENTS);
 }

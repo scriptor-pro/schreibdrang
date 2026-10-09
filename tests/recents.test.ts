@@ -63,6 +63,13 @@ test("un texte inconnu, ou retenu sans format valide, est un roman", () => {
     { path: "/ancien.md", date: "2026-10-01T00:00:00.000Z" },
     { path: "/faux.md", date: "2026-10-01T00:00:00.000Z", format: "sonnet" },
     { path: "/libre.md", date: "2026-10-01T00:00:00.000Z", format: "vanilla" },
+    { path: "/film.fountain", date: "2026-10-01T00:00:00.000Z", format: "scenario" },
   ]);
-  assert.deepEqual(list.map((r) => r.format), ["roman", "roman", "vanilla"]);
+  assert.deepEqual(list.map((r) => r.format), ["roman", "roman", "vanilla", "scenario"]);
+});
+
+test("un fichier .fountain inconnu est un scénario", () => {
+  assert.equal(formatOf([], "/film.fountain"), "scenario");
+  assert.equal(formatOf([], "/Film.FOUNTAIN"), "scenario");
+  assert.equal(formatOf(addRecent([], "/film.fountain", "vanilla", now), "/film.fountain"), "vanilla");
 });

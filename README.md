@@ -8,11 +8,12 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.32, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.33, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
 - **Écriture** d'un texte au format roman (chapitres en `#`, scènes en `##`), en Courier Prime, avec le compte des caractères et des mots.
+- **Format scénario** (première étape) : écriture en Fountain avec la mise en page d'un scénario dans l'éditeur, saisie d'un dialogue par la touche Tab, coupures de page et numéros de page, une fiche par scène au cork board, export `.fountain` avec sa page de titre, export PDF à la mise en page standard (A4, Courier Prime, intitulés de scène en gras, italique et gras de Fountain), aux mêmes coupures de page que l'éditeur.
 - **Format vanilla** : un texte d'un seul tenant, sans réglages propres et sans cork board. Le format d'un texte est retenu avec la liste des textes récents ; un fichier inconnu s'ouvre comme un roman.
 - **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
@@ -22,7 +23,7 @@ Ce qui fonctionne :
 - **Paramètres** : thème clair ou sombre, police et taille du texte, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : les formats nouvelle, scénario et théâtre, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import.
+Ce qui n'existe pas encore : les formats nouvelle et théâtre, l'export Final Draft d'un scénario, ses templates, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import.
 
 ## Prérequis
 
@@ -64,7 +65,9 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/home.ts` | liste des textes récents de l'accueil |
 | `src/settings.ts` | réglages : valeurs, validation, stockage |
 | `src/recents.ts` | liste des textes récents |
-| `src/cover.ts` | champs de la page de couverture d'un scénario |
+| `src/cover.ts` | page de couverture d'un scénario, page de titre Fountain |
+| `src/fountain.ts` | scénario en Fountain : nature des lignes, découpage en scènes |
+| `src/pagination.ts` | découpage d'un scénario en pages |
 | `src/outline.ts` | découpage du texte en chapitres et en scènes, pour le cork board |
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |

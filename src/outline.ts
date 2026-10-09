@@ -59,7 +59,8 @@ export function serializeDocument(outline: Outline): string {
   const parts: string[] = [];
   if (outline.preamble) parts.push(outline.preamble);
   for (const chapter of outline.chapters) {
-    parts.push(chapter.heading);
+    // Un scénario sans section n'a qu'une colonne, sans titre.
+    if (chapter.heading) parts.push(chapter.heading);
     if (chapter.intro) parts.push(chapter.intro);
     for (const scene of chapter.scenes) {
       parts.push(scene.heading);
