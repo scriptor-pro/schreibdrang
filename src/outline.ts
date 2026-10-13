@@ -55,6 +55,35 @@ export function parseDocument(text: string): Outline {
   return outline;
 }
 
+// Découpe une nouvelle : elle n'a pas de chapitres, seulement des scènes. Une
+// scène commence par un titre, de niveau 1 ou 2 ; elles forment une seule
+// colonne, sans titre.
+export function parseNovella(text: string): Outline {
+  const outline: Outline = { preamble: "", chapters: [] };
+  let scene: Scene | undefined;
+  const lines: string[] = [];
+
+  const flush = () => {
+    const block = lines.join("\n").trim();
+    lines.length = 0;
+    if (scene) scene.body = block;
+    else outline.preamble = block;
+  };
+
+  for (const line of text.split("\n")) {
+    if (line.startsWith("# ") || line.startsWith("## ")) {
+      flush();
+      scene = { heading: line, body: "" };
+      if (!outline.chapters.length) outline.chapters.push({ heading: "", intro: "", scenes: [] });
+      outline.chapters[0].scenes.push(scene);
+    } else {
+      lines.push(line);
+    }
+  }
+  flush();
+  return outline;
+}
+
 export function serializeDocument(outline: Outline): string {
   const parts: string[] = [];
   if (outline.preamble) parts.push(outline.preamble);

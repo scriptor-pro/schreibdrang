@@ -143,6 +143,43 @@ fn export(path: &Path, format: &str, markdown: &str) -> Result<(), String> {
     }
 }
 
+// Filtre Pandoc de l'import : les images sont retirées, et avec elles les
+// paragraphes qu'elles laissent vides.
+const IMPORT_FILTER: &str = "function Image() return {} end\nfunction Para(el) if #el.content == 0 then return {} end end\n";
+
+/// Convertit un document Word (.docx) ou OpenDocument (.odt) en Markdown : les
+/// titres, l'italique, le gras et les notes sont gardés ; la mise en forme
+/// propre au traitement de texte est abandonnée. Le document n'est pas modifié.
+fn import(path: &Path) -> Result<String, String> {
+    let filter = resources_dir()?.join("import.lua");
+    fs::write(&filter, IMPORT_FILTER).map_err(|e| e.to_string())?;
+    let result = Command::new("pandoc")
+        .arg(path)
+        .args([
+            // Du Markdown sans attributs ni balises, et sans remplacement des
+            // apostrophes ou des tirets : le texte est repris tel qu'il a été saisi.
+            "--to=markdown-smart-bracketed_spans-native_spans-native_divs-fenced_divs-raw_html-raw_attribute-header_attributes-link_attributes-fenced_code_attributes",
+            "--wrap=none",
+            "--markdown-headings=atx",
+        ])
+        .arg(format!("--lua-filter={}", filter.display()))
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("Pandoc est introuvable sur ce système ({e})."))?;
+    if result.status.success() {
+        String::from_utf8(result.stdout).map_err(|e| e.to_string())
+    } else {
+        Err(String::from_utf8_lossy(&result.stderr).trim().to_string())
+    }
+}
+
+#[tauri::command]
+async fn import_document(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || import(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn export_document(path: String, format: String, markdown: String) -> Result<(), String> {
     // La conversion peut durer plusieurs dizaines de secondes : elle tourne
@@ -484,6 +521,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("file-save-as", "Enregistrer sous…", Some("CmdOrCtrl+Shift+S"))?)
         .item(&item("file-export", "Exporter…", None)?)
         .separator()
+        .item(&item("file-format", "Format du texte…", None)?)
+        .separator()
         .item(&item("file-find", "Chercher et remplacer…", Some("CmdOrCtrl+F"))?)
         .separator()
         .item(&item("file-test", "Charger le texte de test", None)?)
@@ -589,6 +628,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             export_document,
+            import_document,
             export_cover,
             export_screenplay,
             read_text_file,
@@ -740,5 +780,22 @@ mod tests {
         let modified = file_modified(path.to_string_lossy().into_owned()).expect("la date est lue");
         assert!(now.abs_diff(modified) < 60_000);
         assert!(file_modified("/aucun/fichier/ici".into()).is_err());
+    }
+
+    // Demande Pandoc : un document Word ou OpenDocument devient du Markdown.
+    #[test]
+    fn un_document_importe_garde_ses_titres_et_sa_mise_en_valeur() {
+        let source = "# Chapitre 1\n\n## La cuisine\n\nUn *italique*, un **gras** et « l’apostrophe ».\n\nAvant ![](image.png) après.\n";
+        for extension in ["docx", "odt"] {
+            let path = std::env::temp_dir().join(format!("schreibdrang-test-import.{extension}"));
+            run_pandoc(source, &path, &[]).expect("le document d'essai est créé");
+            let text = import(&path).expect("le document est importé");
+            assert!(text.starts_with("# Chapitre 1\n\n## La cuisine\n\n"), "{extension} : {text}");
+            assert!(text.contains("Un *italique*, un **gras** et « l’apostrophe »."), "{extension} : {text}");
+            // Ni image, ni balise, ni attribut de traitement de texte.
+            assert!(text.contains("Avant après.") || text.contains("Avant  après."), "{extension} : {text}");
+            assert!(!text.contains("image") && !text.contains('{') && !text.contains('<'), "{extension} : {text}");
+        }
+        assert!(import(Path::new("/aucun/fichier.docx")).is_err());
     }
 }

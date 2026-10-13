@@ -2,7 +2,9 @@
 // local. Ce module n'accède à la page que dans loadRecents et saveRecents.
 
 // Formats de texte disponibles dans le prototype.
-export type Format = "roman" | "vanilla" | "scenario";
+export type Format = "roman" | "nouvelle" | "vanilla" | "scenario";
+
+export const FORMATS: Format[] = ["roman", "nouvelle", "vanilla", "scenario"];
 
 export interface Recent {
   path: string;
@@ -39,7 +41,7 @@ export function normalizeRecents(raw: unknown): Recent[] {
     if (!entry || typeof entry !== "object") continue;
     const { path, date, format } = entry as Record<string, unknown>;
     if (typeof path !== "string" || !path || typeof date !== "string" || Number.isNaN(Date.parse(date))) continue;
-    list.push({ path, date, format: format === "vanilla" || format === "scenario" ? format : "roman" });
+    list.push({ path, date, format: FORMATS.includes(format as Format) ? (format as Format) : "roman" });
   }
   return list.slice(0, MAX_RECENTS);
 }

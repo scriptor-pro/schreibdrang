@@ -430,6 +430,12 @@ body.whole-screen #home {
   cursor: pointer;
 }
 
+/* Dans la boîte de choix, le format proposé ou actuel est signalé par la
+   couleur d'accent. */
+.format[aria-current="true"] {
+  border-color: var(--accent);
+}
+
 .format .icon {
   width: 1.75rem;
   height: 1.75rem;

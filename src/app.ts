@@ -18,11 +18,12 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FORMAT_NAMES, recentsList, renderRecents } from "./home";
-import { parseDocument, serializeDocument } from "./outline";
+import { parseDocument, parseNovella, serializeDocument } from "./outline";
+import { fileKind, importedName, knownFormat, loadTexts, saveTexts, withFormat, withRecents } from "./textes";
 import type { Chapter, Scene } from "./outline";
 import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
-import { addRecent, formatOf, loadRecents, removeRecent, saveRecents } from "./recents";
+import { addRecent, loadRecents, removeRecent, saveRecents } from "./recents";
 import type { Format, Recent } from "./recents";
 import { AUTHOR_FIELDS, loadCover, missingFields, normalizeAuthor, normalizeCover, saveCover, titlePage } from "./cover";
 import {
@@ -204,8 +205,13 @@ let currentPath: string | undefined;
 const filenameEl = document.querySelector<HTMLSpanElement>("#filename")!;
 
 // Format du texte affiché. Un texte vanilla est d'un seul tenant : il n'a pas
-// de cork board. Un scénario est écrit en Fountain.
+// de cork board. Une nouvelle a des scènes, sans chapitres. Un scénario est
+// écrit en Fountain.
 let currentFormat: Format = "roman";
+
+// Nom, sans extension, du document Word ou OpenDocument dont le texte affiché
+// a été importé : il est proposé au premier enregistrement.
+let importName: string | undefined;
 
 // Titre et œuvre d'origine saisis pour la couverture du scénario affiché.
 let coverTitle = "";
@@ -220,6 +226,14 @@ function setFormat(format: Format) {
   // Le menu Scénario n'agit qu'au format scénario.
   invoke("set_menu_item_enabled", { id: "scenario-cover", enabled: format === "scenario" }).catch((error) => {
     setStatus(`le menu Scénario n'a pas pu être mis à jour (${error})`, true);
+  });
+}
+
+// Un fichier .fountain est toujours un scénario : son format ne se change pas.
+function refreshFormatMenu() {
+  const fixed = currentPath !== undefined && fileKind(currentPath) === "fountain";
+  invoke("set_menu_item_enabled", { id: "file-format", enabled: !fixed }).catch((error) => {
+    setStatus(`le menu Fichier n'a pas pu être mis à jour (${error})`, true);
   });
 }
 
@@ -800,7 +814,8 @@ function buildBoard() {
   board.replaceChildren();
 
   const text = view.state.doc.toString();
-  const outline = currentFormat === "scenario" ? parseScreenplay(text) : parseDocument(text);
+  const outline =
+    currentFormat === "scenario" ? parseScreenplay(text) : currentFormat === "nouvelle" ? parseNovella(text) : parseDocument(text);
   boardPreamble = outline.preamble;
   for (const chapter of outline.chapters) {
     const column = document.createElement("div");
@@ -825,7 +840,7 @@ function buildBoard() {
       card.setAttribute("aria-describedby", "board-help");
       sceneOf.set(card, scene);
       const h3 = document.createElement("h3");
-      h3.textContent = currentFormat === "scenario" ? screenplaySceneTitle(scene.heading) : scene.heading.replace(/^##\s*/, "");
+      h3.textContent = currentFormat === "scenario" ? screenplaySceneTitle(scene.heading) : scene.heading.replace(/^##?\s*/, "");
       const p = document.createElement("p");
       p.textContent = summary(scene.body);
       card.append(h3, p);
@@ -1143,7 +1158,7 @@ const fileStatus = document.querySelector<HTMLSpanElement>("#export-status")!;
 
 const TEXT_FILTERS = [{ name: "Texte Markdown", extensions: ["md", "txt"] }];
 const FOUNTAIN_FILTERS = [{ name: "Scénario Fountain", extensions: ["fountain", "txt"] }];
-const OPEN_FILTERS = [{ name: "Texte ou scénario", extensions: ["md", "txt", "fountain"] }];
+const OPEN_FILTERS = [{ name: "Texte, scénario ou document", extensions: ["md", "txt", "fountain", "odt", "docx"] }];
 
 function setStatus(message: string, error = false) {
   fileStatus.textContent = error ? `Erreur : ${message}` : message;
@@ -1153,9 +1168,15 @@ function setStatus(message: string, error = false) {
 
 let recents: Recent[] = loadRecents();
 
+// Format retenu pour chaque fichier ; ceux des textes récents sont repris.
+let texts = withRecents(loadTexts(), recents);
+saveTexts(texts);
+
 function rememberRecent(path: string) {
   recents = addRecent(recents, path, currentFormat, new Date());
   saveRecents(recents);
+  texts = withFormat(texts, path, currentFormat);
+  saveTexts(texts);
 }
 
 function forgetRecent(path: string) {
@@ -1173,6 +1194,8 @@ function loadDocument(text: string, path: string | undefined, format: Format) {
   show("text");
   view.setState(createState(text));
   currentPath = path;
+  importName = undefined;
+  refreshFormatMenu();
   setDirty(false);
   samples.length = 0;
   keyTime = 0;
@@ -1206,10 +1229,10 @@ function requestNewDocument(format: Format) {
 
 // Ouvre le fichier indiqué. Renvoie faux si la lecture a échoué ; le fichier
 // sort alors de la liste des textes récents.
-async function openPath(path: string): Promise<boolean> {
+async function openPath(path: string, format?: Format): Promise<boolean> {
   try {
     const text = await invoke<string>("read_text_file", { path });
-    loadDocument(text, path, formatOf(recents, path));
+    loadDocument(text, path, knownFormat(texts, path) ?? format ?? "roman");
     rememberRecent(path);
     // Le dernier enregistrement du fichier : son heure, ou sa date s'il a
     // plus de 24 heures. Le chemin complet reste lisible au survol.
@@ -1228,9 +1251,35 @@ async function openPath(path: string): Promise<boolean> {
   }
 }
 
+// Importe un document Word ou OpenDocument : son texte, converti en Markdown,
+// devient un nouveau texte, pas encore enregistré. Le document n'est pas modifié.
+async function importPath(path: string, format: Format) {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  setStatus(`Import de ${name} en cours…`);
+  try {
+    const text = await invoke<string>("import_document", { path });
+    loadDocument(text, undefined, format);
+    importName = importedName(path);
+    setDirty(true);
+    setStatus(`Importé de ${name} : enregistre ce texte pour le garder.`);
+    fileStatus.title = path;
+  } catch (error) {
+    setStatus(`l'import de ${name} a échoué (${error})`, true);
+  }
+}
+
 async function openDocument() {
   const path = await open({ title: "Ouvrir un texte", multiple: false, filters: OPEN_FILTERS });
-  if (typeof path === "string") await openPath(path);
+  if (typeof path !== "string") return;
+  const name = path.split(/[\\/]/).pop() ?? path;
+  if (fileKind(path) === "import") {
+    askFormat("Importer un document", `« ${name} » va être converti en texte. Choisis son format.`, "roman", (format) => importPath(path, format));
+  } else if (knownFormat(texts, path)) {
+    await openPath(path);
+  } else {
+    // Un fichier .md ou .txt que l'app ne connaît pas ne dit pas son format.
+    askFormat("Format du texte", `Schreibdrang ne connaît pas encore « ${name} ». Choisis son format.`, "roman", (format) => openPath(path, format));
+  }
 }
 
 function requestOpenDocument() {
@@ -1244,6 +1293,8 @@ async function writeDocument(path: string) {
   try {
     await invoke("write_text_file", { path, contents: text });
     currentPath = path;
+    importName = undefined;
+    refreshFormatMenu();
     rememberRecent(path);
     setDirty(view.state.doc.toString() !== text);
     const now = new Date();
@@ -1259,7 +1310,7 @@ async function saveDocumentAs() {
   if (document.querySelector("dialog[open]")) return;
   const path = await save({
     title: "Enregistrer le texte sous",
-    defaultPath: currentPath ?? (currentFormat === "scenario" ? "sans-titre.fountain" : "sans-titre.md"),
+    defaultPath: currentPath ?? `${importName ?? "sans-titre"}${currentFormat === "scenario" ? ".fountain" : ".md"}`,
     filters: currentFormat === "scenario" ? FOUNTAIN_FILTERS : TEXT_FILTERS,
   });
   if (path) await writeDocument(path);
@@ -1327,7 +1378,7 @@ btnExport.addEventListener("click", () => {
 
 // Le nom proposé pour un export : celui du fichier, sans son extension.
 function exportName(): string {
-  return currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? (currentFormat === "scenario" ? "scenario" : "roman");
+  return currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? importName ?? (currentFormat === "scenario" ? "scenario" : "roman");
 }
 
 // Texte d'un export Fountain : le scénario, précédé de la page de titre tirée
@@ -1433,20 +1484,71 @@ for (const item of homeFormats.children) {
   formatChoices.append(copy);
 }
 
-function chooseNewDocument() {
+const formatTitle = document.querySelector<HTMLHeadingElement>("#format-title")!;
+const formatMessage = document.querySelector<HTMLParagraphElement>("#format-message")!;
+
+// La boîte de choix du format sert à créer un texte, à dire le format d'un
+// fichier que l'app ne connaît pas ou d'un document importé, et à changer le
+// format du texte affiché. La carte du format proposé reçoit le focus :
+// Entrée suffit.
+let formatAction: ((format: Format) => void) | undefined;
+
+function askFormat(title: string, message: string, proposed: Format | undefined, action: (format: Format) => void) {
   if (document.querySelector("dialog[open]")) return;
+  formatTitle.textContent = title;
+  formatMessage.textContent = message;
+  formatAction = action;
+  for (const button of formatChoices.querySelectorAll<HTMLButtonElement>("button[data-format]")) {
+    if (button.dataset.format === proposed) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  }
   formatDialog.showModal();
+  formatChoices.querySelector<HTMLButtonElement>(`button[data-format="${proposed}"]`)?.focus();
 }
 
-function onFormatChosen(event: Event) {
+function chooseNewDocument() {
+  askFormat("Nouveau texte", "Choisis le format de ton texte.", undefined, requestNewDocument);
+}
+
+// Fichier > Format du texte… : le format du texte affiché change, le texte
+// lui-même reste tel quel. L'historique d'annulation repart de zéro.
+function chooseFormat() {
+  if (currentPath !== undefined && fileKind(currentPath) === "fountain") {
+    setStatus("Un fichier .fountain est toujours un scénario : son format ne se change pas.");
+    return;
+  }
+  askFormat("Format du texte", "Choisis le format de ce texte. Le texte lui-même ne change pas.", currentFormat, (format) => {
+    if (format === currentFormat) return;
+    const text = view.state.doc.toString();
+    const modified = dirty;
+    setFormat(format);
+    show("text");
+    view.setState(createState(text));
+    setDirty(modified);
+    scheduleCounts(view);
+    if (currentPath) rememberRecent(currentPath);
+    setStatus(`Ce texte est maintenant au format ${FORMAT_NAMES[format]}.`);
+    view.focus();
+  });
+}
+
+// Une carte de l'accueil crée un texte ; une carte de la boîte de dialogue
+// répond à la question posée.
+homeFormats.addEventListener("click", (event) => {
+  const button = (event.target as Element).closest<HTMLButtonElement>("button[data-format]");
+  if (button) requestNewDocument(button.dataset.format as Format);
+});
+
+formatChoices.addEventListener("click", (event) => {
   const button = (event.target as Element).closest<HTMLButtonElement>("button[data-format]");
   if (!button) return;
+  const action = formatAction;
+  formatAction = undefined;
   formatDialog.close();
-  requestNewDocument(button.dataset.format as Format);
-}
+  action?.(button.dataset.format as Format);
+});
 
-homeFormats.addEventListener("click", onFormatChosen);
-formatChoices.addEventListener("click", onFormatChosen);
+
 
 document.querySelector<HTMLButtonElement>("#format-cancel")!.addEventListener("click", () => formatDialog.close());
 document.querySelector<HTMLButtonElement>("#home-open")!.addEventListener("click", requestOpenDocument);
@@ -1731,6 +1833,7 @@ const ACTIONS: Record<string, () => void> = {
   "file-save": saveDocument,
   "file-save-as": saveDocumentAs,
   "file-export": () => btnExport.click(),
+  "file-format": chooseFormat,
   "file-find": openSearch,
   "file-test": loadTestText,
   "file-quit": requestQuit,
@@ -1752,7 +1855,7 @@ const ACTIONS: Record<string, () => void> = {
 
 // Actions du menu Fichier sans objet tant qu'il n'y a aucun texte ; leurs
 // boutons sont alors désactivés.
-const NEEDS_TEXT = new Set(["file-save", "file-save-as", "file-export"]);
+const NEEDS_TEXT = new Set(["file-save", "file-save-as", "file-export", "file-format"]);
 
 // Un raccourci peut arriver deux fois, par le menu natif et par la page :
 // la même action n'est exécutée qu'une fois par quart de seconde.
