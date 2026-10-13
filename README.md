@@ -8,16 +8,17 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.35, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.36, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
 - **Écriture** d'un texte au format roman (chapitres en `#`, scènes en `##`), en Courier Prime, avec le compte des caractères et des mots.
 - **Format scénario** (première étape) : écriture en Fountain avec la mise en page d'un scénario dans l'éditeur, saisie d'un dialogue par la touche Tab, coupures de page et numéros de page, une fiche par scène au cork board, export `.fountain` avec sa page de titre, export PDF à la mise en page standard (A4, Courier Prime, intitulés de scène en gras, italique et gras de Fountain), aux mêmes coupures de page que l'éditeur.
+- **Templates de scénario** : huit modèles de structure (trois actes, quatre actes, huit séquences, Save the Cat, voyage du héros, Truby, cinq actes, Kishōtenketsu), choisis à la création d'un scénario ou par Scénario > Modèle…, avec une longueur cible (110 pages par défaut, de 1 à 999). L'éditeur montre la consigne de chaque étape dans la marge de droite, en face de la page où elle commence, ou dans la page si la fenêtre est étroite ; Affichage > Afficher les consignes les masque. Le modèle est retenu pour chaque fichier, et son nom suit le format dans la barre. Les consignes ne font pas partie du texte et ne sont jamais exportées.
 - **Format nouvelle** : des scènes sans chapitres, avec un cork board d'une seule colonne.
 - **Format du texte** : retenu pour chaque fichier ; demandé à l'ouverture d'un fichier `.md` ou `.txt` inconnu, et modifiable par Fichier > Format du texte…. Un fichier `.fountain` est toujours un scénario.
 - **Import** d'un document Word (`.docx`) ou OpenDocument (`.odt`) par « Ouvrir… » : il devient un nouveau texte en Markdown, le document d'origine n'est pas modifié.
-- **Format vanilla** : un texte libre, d'un seul tenant, sans cork board. 
+- **Format vanilla** : un texte libre, d'un seul tenant, sans cork board, compté en feuillets de 1 500 signes : le pied de page donne le feuillet du curseur et le total, un repère numéroté marque chaque feuillet dans le texte. 
 - **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
 - **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
@@ -26,7 +27,7 @@ Ce qui fonctionne :
 - **Paramètres** : thème clair ou sombre, police et taille du texte, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : le format théâtre, l'export Final Draft d'un scénario, ses templates, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import `.epub` et Final Draft.
+Ce qui n'existe pas encore : le format théâtre, l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import `.epub` et Final Draft.
 
 ## Prérequis
 
@@ -70,9 +71,11 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/recents.ts` | liste des textes récents |
 | `src/cover.ts` | page de couverture d'un scénario, page de titre Fountain |
 | `src/fountain.ts` | scénario en Fountain : nature des lignes, découpage en scènes |
-| `src/pagination.ts` | découpage d'un scénario en pages |
+| `src/pagination.ts` | découpage d'un scénario en pages, d'un texte vanilla en feuillets |
 | `src/dates.ts` | dates en toutes lettres, message d'enregistrement |
-| `src/textes.ts` | format retenu pour chaque fichier, nature d'un fichier d'après son extension |
+| `src/textes.ts` | format, modèle et longueur cible retenus pour chaque fichier, nature d'un fichier d'après son extension |
+| `src/templates.ts` | modèles de scénario : page de chaque étape, consignes à montrer |
+| `src/consignes.ts` | les huit modèles et leurs 91 consignes |
 | `src/outline.ts` | découpage du texte en chapitres et en scènes, pour le cork board |
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |
@@ -82,7 +85,7 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `scripts/make-cork.py` | dessine le grain du liège du cork board |
 | `scripts/installer-lanceur.sh` | installe un lanceur et les icônes pour l'utilisateur |
 | `scripts/check-identite.py` | contrôle de l'identité visuelle |
-| `tests/` | tests des réglages, des textes récents et du découpage |
+| `tests/` | tests des réglages, des textes récents, du découpage et des modèles de scénario |
 
 ## Identité visuelle
 

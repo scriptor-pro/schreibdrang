@@ -1,9 +1,12 @@
 // Ce que l'app retient de chaque fichier, par son chemin et sans limite de
-// nombre : le format du texte, que le fichier lui-même ne dit pas. Ce module
-// n'accède à la page que dans loadTexts et saveTexts.
+// nombre : le format du texte, que le fichier lui-même ne dit pas, et pour un
+// scénario son modèle et sa longueur cible. Ce module n'accède à la page que
+// dans les fonctions load… et save….
 
 import { FORMATS } from "./recents.ts";
 import type { Format, Recent } from "./recents.ts";
+import { NO_MODEL, normalizeChoice } from "./templates.ts";
+import type { Choice } from "./templates.ts";
 
 export type Texts = Record<string, Format>;
 
@@ -62,5 +65,44 @@ export function saveTexts(texts: Texts) {
     localStorage.setItem(KEY, JSON.stringify(texts));
   } catch {
     // Stockage plein ou indisponible : les formats restent valables pour la session.
+  }
+}
+
+// Modèle et longueur cible retenus pour chaque scénario.
+export type Choices = Record<string, Choice>;
+
+const CHOICES_KEY = "schreibdrang.modeles";
+
+// Choix retenu pour ce fichier ; sans modèle s'il n'y en a pas.
+export function knownChoice(choices: Choices, path: string): Choice {
+  return Object.prototype.hasOwnProperty.call(choices, path) ? choices[path] : { ...NO_MODEL };
+}
+
+export function withChoice(choices: Choices, path: string, choice: Choice): Choices {
+  return { ...choices, [path]: choice };
+}
+
+// Des données illisibles donnent une liste vide ; un choix invalide est
+// ramené à « sans modèle ».
+export function normalizeChoices(raw: unknown): Choices {
+  const choices: Choices = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return choices;
+  for (const [path, choice] of Object.entries(raw)) if (path) choices[path] = normalizeChoice(choice);
+  return choices;
+}
+
+export function loadChoices(): Choices {
+  try {
+    return normalizeChoices(JSON.parse(localStorage.getItem(CHOICES_KEY) ?? "null"));
+  } catch {
+    return {};
+  }
+}
+
+export function saveChoices(choices: Choices) {
+  try {
+    localStorage.setItem(CHOICES_KEY, JSON.stringify(choices));
+  } catch {
+    // Stockage plein ou indisponible : les choix restent valables pour la session.
   }
 }

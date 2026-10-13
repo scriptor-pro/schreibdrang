@@ -4,7 +4,8 @@
 - Courier Prime (affichage) : fichiers woff2 copiés tels quels dans src/fonts/ ;
   chaque style est aussi converti en TrueType pour la couverture et le PDF
   d'un scénario.
-- Jost (interface) : fichiers woff2 copiés tels quels dans src/fonts/.
+- Jost (interface) : fichiers woff2 copiés tels quels dans src/fonts/, l'italique
+  compris.
 - Literata (export) : fonts.bunny.net ne fournit que des woff2 découpés par
   jeu de caractères ; ils sont convertis et fusionnés en un fichier TrueType
   par style dans src-tauri/resources/fonts/, lisible par le moteur PDF.
@@ -55,6 +56,10 @@ def main() -> None:
                 name = f"jost-{subset}-{weight}-normal.woff2"
                 (WEB_DIR / name).write_bytes(download("jost", subset, weight, "normal"))
                 print("page   ", name)
+            # L'italique sert au nom du modèle, dans la barre.
+            name = f"jost-{subset}-400-italic.woff2"
+            (WEB_DIR / name).write_bytes(download("jost", subset, "400", "italic"))
+            print("page   ", name)
 
     # Courier Prime : woff2 d'origine, pour la page.
     if "courier-prime" in wanted:

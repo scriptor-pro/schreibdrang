@@ -321,3 +321,39 @@ export function printedPages(lines: string[], kinds: LineKind[], perPage = LINES
   for (const page of pages) while (page.length > 0 && page[page.length - 1].length === 0) page.pop();
   return pages;
 }
+
+// Un texte vanilla n'a pas de mise en page : il se compte en feuillets de
+// 1 500 signes, espaces et retours à la ligne compris.
+export const SIGNS_PER_SHEET = 1500;
+
+// Début de chaque feuillet d'un texte vanilla, à partir du deuxième. Le
+// feuillet commence avec le mot où tombe le compte, ou avec le mot suivant
+// si le compte tombe entre deux mots ; un mot plus long qu'un feuillet est
+// coupé au compte. Les espaces de la fin du texte n'ouvrent pas un feuillet.
+export function sheets(lines: string[], perSheet = SIGNS_PER_SHEET): PageBreak[] {
+  const text = lines.join("\n");
+  // Une espace insécable ne sépare pas deux mots.
+  const between = (at: number) => text[at] === " " || text[at] === "\t" || text[at] === "\n";
+  const breaks: PageBreak[] = [];
+  let line = 0;
+  let lineStart = 0;
+  let last = 0;
+  for (let count = perSheet; count < text.length; count += perSheet) {
+    let start = count;
+    if (between(start)) {
+      while (start < text.length && between(start)) start += 1;
+      if (start === text.length) break;
+    } else {
+      while (start > last && !between(start - 1)) start -= 1;
+      if (start === last) start = count;
+    }
+    if (start <= last) continue;
+    last = start;
+    while (lineStart + lines[line].length < start) {
+      lineStart += lines[line].length + 1;
+      line += 1;
+    }
+    breaks.push({ line, offset: start - lineStart });
+  }
+  return breaks;
+}

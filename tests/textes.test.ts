@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fileKind, importedName, knownFormat, normalizeTexts, withFormat, withRecents } from "../src/textes.ts";
+import { fileKind, importedName, knownChoice, knownFormat, normalizeChoices, normalizeTexts, withChoice, withFormat, withRecents } from "../src/textes.ts";
 
 test("un fichier .fountain est toujours un scénario, quoi que l'app ait retenu", () => {
   assert.equal(knownFormat({}, "/textes/film.fountain"), "scenario");
@@ -46,4 +46,28 @@ test("un fichier est un scénario Fountain, un texte, ou un document à importer
 test("un document importé propose son nom, sans son extension, pour l'enregistrement", () => {
   assert.equal(importedName("/x/Mon roman.docx"), "Mon roman");
   assert.equal(importedName("C:\\x\\nouvelle.v2.odt"), "nouvelle.v2");
+});
+
+test("un fichier sans choix retenu est sans modèle, à 110 pages", () => {
+  assert.deepEqual(knownChoice({}, "/textes/film.fountain"), { model: "", target: 110 });
+  assert.deepEqual(knownChoice({}, "constructor"), { model: "", target: 110 });
+  assert.deepEqual(knownChoice({}, "__proto__"), { model: "", target: 110 });
+});
+
+test("le choix retenu pour un fichier est rendu tel quel, et se remplace", () => {
+  let choices = withChoice({}, "/textes/film.fountain", { model: "save-the-cat", target: 95 });
+  choices = withChoice(choices, "/textes/autre.fountain", { model: "truby", target: 110 });
+  assert.deepEqual(knownChoice(choices, "/textes/film.fountain"), { model: "save-the-cat", target: 95 });
+  choices = withChoice(choices, "/textes/film.fountain", { model: "", target: 120 });
+  assert.deepEqual(knownChoice(choices, "/textes/film.fountain"), { model: "", target: 120 });
+  assert.deepEqual(knownChoice(choices, "/textes/autre.fountain"), { model: "truby", target: 110 });
+});
+
+test("des choix illisibles donnent une liste vide, un choix invalide est ramené à « sans modèle »", () => {
+  assert.deepEqual(normalizeChoices(null), {});
+  assert.deepEqual(normalizeChoices([1]), {});
+  assert.deepEqual(
+    normalizeChoices({ "/a.fountain": { model: "truby", target: 90 }, "/b.fountain": { model: "inconnu", target: 9 }, "/c.fountain": "x", "": { model: "truby", target: 90 } }),
+    { "/a.fountain": { model: "truby", target: 90 }, "/b.fountain": { model: "", target: 9 }, "/c.fountain": { model: "", target: 110 } },
+  );
 });

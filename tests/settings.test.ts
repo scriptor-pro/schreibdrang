@@ -9,7 +9,7 @@ test("des données absentes ou illisibles donnent les valeurs par défaut", () =
 });
 
 test("des réglages valides sont conservés", () => {
-  const settings = { theme: "sombre", font: "DejaVu Sans Mono", size: 20, startup: "dernier", nbsp: false };
+  const settings = { theme: "sombre", font: "DejaVu Sans Mono", size: 20, startup: "dernier", nbsp: false, consignes: false };
   assert.deepEqual(normalizeSettings(settings), settings);
 });
 
@@ -30,4 +30,10 @@ test("le repère des espaces insécables est affiché par défaut, et se masque"
   assert.equal(normalizeSettings({}).nbsp, true);
   assert.equal(normalizeSettings({ nbsp: false }).nbsp, false);
   assert.equal(normalizeSettings({ nbsp: "non" }).nbsp, true);
+});
+
+test("les consignes sont affichées par défaut, et se masquent", () => {
+  assert.equal(normalizeSettings({}).consignes, true);
+  assert.equal(normalizeSettings({ consignes: "non" }).consignes, true);
+  assert.equal(normalizeSettings({ consignes: false }).consignes, false);
 });

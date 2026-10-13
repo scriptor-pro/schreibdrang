@@ -1,6 +1,6 @@
 [package]
 name = "schreibdrang-prototype"
-version = "0.0.35"
+version = "0.0.36"
 description = "Prototype Tauri de Schreibdrang"
 authors = ["you"]
 edition = "2021"

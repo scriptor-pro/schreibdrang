@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyLines } from "../src/fountain.ts";
-import { pageAt, paginate, printedPages, wrapOffsets } from "../src/pagination.ts";
+import { SIGNS_PER_SHEET, pageAt, paginate, printedPages, sheets, wrapOffsets } from "../src/pagination.ts";
 import type { PrintedLine } from "../src/pagination.ts";
 
 function pages(text: string, perPage: number) {
@@ -279,4 +279,40 @@ test("une ligne vide suit toujours l'intitulé de scène, même si elle n'a pas 
   // Elle compte dans la page : intitulé, ligne vide, « Un. » remplissent trois lignes.
   assert.deepEqual(pages("INT. A\nUn.\n\nDeux.", 3), [{ line: 3, offset: 0 }]);
   assert.deepEqual(printed("INT. A\nUn.\n\nDeux.", 3), [["INT. A", "", "Un."], ["Deux."]]);
+});
+
+function lineBreaks(text: string, perSheet: number) {
+  return sheets(text.split("\n"), perSheet);
+}
+
+test("un texte vanilla se compte en feuillets de 1 500 signes, espaces comprises", () => {
+  assert.equal(SIGNS_PER_SHEET, 1500);
+  assert.deepEqual(sheets([""]), []);
+  assert.deepEqual(sheets(["a".repeat(1500)]), []);
+  // Le 1 501e signe ouvre le deuxième feuillet.
+  assert.equal(sheets([`${"a".repeat(1499)} b`]).length, 1);
+  // Les espaces et les retours à la ligne de la fin n'ouvrent pas un feuillet.
+  assert.deepEqual(sheets([`${"a".repeat(1500)} `, "", ""]), []);
+});
+
+test("le repère d'un feuillet se place entre deux mots", () => {
+  // Le dixième signe est au milieu de « trois » : le feuillet commence avec le mot.
+  assert.deepEqual(lineBreaks("un deux trois quatre", 10), [{ line: 0, offset: 8 }]);
+  // Le dixième signe est une espace : le feuillet commence au mot suivant.
+  assert.deepEqual(lineBreaks("abcde fghi jkl", 10), [{ line: 0, offset: 11 }]);
+  // Une espace insécable ne sépare pas deux mots : « là ? » reste entier.
+  assert.deepEqual(lineBreaks("Tu restes là ?", 11), [{ line: 0, offset: 10 }]);
+  // Un mot plus long qu'un feuillet est coupé au compte.
+  assert.deepEqual(lineBreaks("abcdefghijklmnopqrstuvwxy", 10), [
+    { line: 0, offset: 10 },
+    { line: 0, offset: 20 },
+  ]);
+});
+
+test("en fin de paragraphe, le repère d'un feuillet se place entre deux paragraphes", () => {
+  assert.deepEqual(lineBreaks("abcdefghij\n\nSuite.", 10), [{ line: 2, offset: 0 }]);
+  // Le retour à la ligne compte pour un signe, comme dans le pied de page.
+  assert.deepEqual(lineBreaks("abcd\nefgh ijkl", 10), [{ line: 1, offset: 5 }]);
+  assert.equal(pageAt(lineBreaks("abcd\nefgh ijkl", 10), 1, 4), 1);
+  assert.equal(pageAt(lineBreaks("abcd\nefgh ijkl", 10), 1, 5), 2);
 });

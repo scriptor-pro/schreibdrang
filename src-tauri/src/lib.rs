@@ -551,19 +551,31 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("edit-settings", "Paramètres…", None)?)
         .build()?;
 
+    // Case cochée et inactive au lancement : la page la règle sur le réglage
+    // retenu, et l'active quand le texte est un scénario.
+    let consignes = CheckMenuItemBuilder::with_id("view-consignes", "Afficher les consignes")
+        .checked(true)
+        .enabled(false)
+        .build(app)?;
+
     let view = SubmenuBuilder::new(app, "Affichage")
         .item(&item("view-home", "Accueil", None)?)
         .item(&item("view-text", "Texte", None)?)
         .item(&item("view-board", "Cork board", None)?)
         .separator()
         .item(&item("view-fullscreen", "Plein écran", Some("F11"))?)
+        .separator()
+        .item(&consignes)
         .build()?;
 
-    // Inactive au lancement : la page l'active quand le texte est un scénario.
+    // Inactives au lancement : la page les active quand le texte est un scénario.
+    let model = MenuItemBuilder::with_id("scenario-model", "Modèle…")
+        .enabled(false)
+        .build(app)?;
     let cover = MenuItemBuilder::with_id("scenario-cover", "Créer la page de couverture…")
         .enabled(false)
         .build(app)?;
-    let screenplay = SubmenuBuilder::new(app, "Scénario").item(&cover).build()?;
+    let screenplay = SubmenuBuilder::new(app, "Scénario").item(&model).item(&cover).build()?;
 
     let help = SubmenuBuilder::new(app, "Aide")
         .item(&item("help-about", "À propos de Schreibdrang", None)?)
@@ -580,6 +592,9 @@ fn set_menu_item_enabled(app: AppHandle, id: String, enabled: bool) -> Result<()
         let Some(submenu) = entry.as_submenu() else { continue };
         if let Some(found) = submenu.get(&id) {
             if let Some(item) = found.as_menuitem() {
+                return item.set_enabled(enabled).map_err(|e| e.to_string());
+            }
+            if let Some(item) = found.as_check_menuitem() {
                 return item.set_enabled(enabled).map_err(|e| e.to_string());
             }
         }

@@ -10,9 +10,11 @@ export interface Settings {
   startup: "accueil" | "dernier";
   // Vrai si l'éditeur signale les espaces insécables par un petit « ° ».
   nbsp: boolean;
+  // Vrai si l'éditeur montre les consignes du modèle d'un scénario.
+  consignes: boolean;
 }
 
-export const DEFAULTS: Settings = { theme: "systeme", font: "", size: 17, startup: "accueil", nbsp: true };
+export const DEFAULTS: Settings = { theme: "systeme", font: "", size: 17, startup: "accueil", nbsp: true, consignes: true };
 
 export const MIN_SIZE = 14;
 export const MAX_SIZE = 24;
@@ -30,7 +32,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const size = rounded >= MIN_SIZE && rounded <= MAX_SIZE ? rounded : DEFAULTS.size;
   const startup = data.startup === "dernier" ? "dernier" : DEFAULTS.startup;
   const nbsp = typeof data.nbsp === "boolean" ? data.nbsp : DEFAULTS.nbsp;
-  return { theme, font, size, startup, nbsp };
+  const consignes = typeof data.consignes === "boolean" ? data.consignes : DEFAULTS.consignes;
+  return { theme, font, size, startup, nbsp, consignes };
 }
 
 export function loadSettings(): Settings {

@@ -3,9 +3,9 @@
 
 import { minimalSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
-import { Decoration, EditorView, MatchDecorator, ViewPlugin, WidgetType, drawSelection, keymap } from "@codemirror/view";
-import { Compartment, Prec, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
-import type { DecorationSet, ViewUpdate } from "@codemirror/view";
+import { BlockType, Decoration, EditorView, MatchDecorator, ViewPlugin, WidgetType, drawSelection, keymap, layer } from "@codemirror/view";
+import { Compartment, Facet, Prec, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
+import type { DecorationSet, LayerMarker, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -19,7 +19,9 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FORMAT_NAMES, recentsList, renderRecents } from "./home";
 import { parseDocument, parseNovella, serializeDocument } from "./outline";
-import { fileKind, importedName, knownFormat, loadTexts, saveTexts, withFormat, withRecents } from "./textes";
+import { fileKind, importedName, knownChoice, knownFormat, loadChoices, loadTexts, saveChoices, saveTexts, withChoice, withFormat, withRecents } from "./textes";
+import { NO_MODEL, TEMPLATES, choiceMessage, consignesByPage, findTemplate, normalizeChoice, shownConsignes } from "./templates";
+import type { Choice, Consigne } from "./templates";
 import type { Chapter, Scene } from "./outline";
 import { MAX_SIZE, MIN_SIZE, applySettings, loadSettings, normalizeSettings, saveSettings } from "./settings";
 import type { Settings } from "./settings";
@@ -36,7 +38,7 @@ import {
 } from "./fountain";
 import type { LineKind } from "./fountain";
 import { savedMessage } from "./dates";
-import { pageAt, paginate, printedPages, printedStyles } from "./pagination";
+import { pageAt, paginate, printedPages, printedStyles, sheets } from "./pagination";
 import type { PageBreak } from "./pagination";
 import type { Author, AuthorField, Cover, Missing } from "./cover";
 
@@ -148,6 +150,13 @@ function scheduleCounts(view: EditorView) {
       const line = view.state.doc.lineAt(head);
       counts += `, page ${pageAt(layout.breaks, line.number - 1, head - line.from)} sur ${layout.breaks.length + 1}`;
     }
+    // Vanilla : le feuillet où se trouve le curseur, et le nombre de feuillets.
+    const sheetBreaks = view.state.field(sheetLayout, false)?.breaks;
+    if (sheetBreaks) {
+      const head = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(head);
+      counts += `, feuillet ${pageAt(sheetBreaks, line.number - 1, head - line.from)} sur ${sheetBreaks.length + 1}`;
+    }
     countsEl.textContent = counts;
   }, 400);
 }
@@ -213,20 +222,36 @@ let currentFormat: Format = "roman";
 // a été importé : il est proposé au premier enregistrement.
 let importName: string | undefined;
 
+// Modèle et longueur cible du scénario affiché. Un texte qui n'est pas un
+// scénario garde le sien en mémoire, sans l'afficher.
+let currentChoice: Choice = NO_MODEL;
+
 // Titre et œuvre d'origine saisis pour la couverture du scénario affiché.
 let coverTitle = "";
 let coverSource = "";
 
 const formatEl = document.querySelector<HTMLSpanElement>("#format")!;
 
+// La barre dit le format, suivi du nom du modèle pour un scénario qui en a un.
+function refreshFormatLabel() {
+  formatEl.textContent = `Format ${FORMAT_NAMES[currentFormat]}`;
+  const template = currentFormat === "scenario" ? findTemplate(currentChoice.model) : undefined;
+  if (!template) return;
+  const name = document.createElement("em");
+  name.textContent = template.name;
+  formatEl.append(" · ", name);
+}
+
 function setFormat(format: Format) {
   currentFormat = format;
-  formatEl.textContent = `Format ${FORMAT_NAMES[format]}`;
+  refreshFormatLabel();
   btnBoard.disabled = format === "vanilla";
-  // Le menu Scénario n'agit qu'au format scénario.
-  invoke("set_menu_item_enabled", { id: "scenario-cover", enabled: format === "scenario" }).catch((error) => {
-    setStatus(`le menu Scénario n'a pas pu être mis à jour (${error})`, true);
-  });
+  // Les menus du scénario n'agissent qu'au format scénario.
+  for (const id of ["scenario-model", "scenario-cover", "view-consignes"]) {
+    invoke("set_menu_item_enabled", { id, enabled: format === "scenario" }).catch((error) => {
+      setStatus(`le menu n'a pas pu être mis à jour (${error})`, true);
+    });
+  }
 }
 
 // Un fichier .fountain est toujours un scénario : son format ne se change pas.
@@ -269,34 +294,110 @@ const FOUNTAIN_LINES = Object.fromEntries(
 
 const TIGHT_SCENE = Decoration.line({ class: "cm-fountain-scene cm-fountain-scene-tight" });
 
+// Consignes du modèle, par page, pour le scénario affiché. La liste est vide
+// sans modèle, hors du format scénario, ou quand l'affichage est masqué.
+const NO_CONSIGNES = new Map<number, Consigne[]>();
+const NO_ITEMS: Consigne[] = [];
+
+const consignesFacet = Facet.define<Map<number, Consigne[]>, Map<number, Consigne[]>>({
+  combine: (values) => values[0] ?? NO_CONSIGNES,
+});
+
+// Les consignes changent sans recréer l'éditeur : l'historique d'annulation est gardé.
+const consignesConf = new Compartment();
+
+function consignesExtension() {
+  return consignesFacet.of(settings.consignes && currentFormat === "scenario" ? consignesByPage(currentChoice) : NO_CONSIGNES);
+}
+
+// Les consignes d'une page : le nom de chaque étape en gras, puis son texte.
+// Elles ne font pas partie du scénario.
+function consignesBlock(items: Consigne[], className: string): HTMLElement {
+  const block = document.createElement("span");
+  block.className = `cm-consignes ${className}`;
+  for (const item of items) {
+    const consigne = document.createElement("span");
+    consigne.className = "cm-consigne";
+    const name = document.createElement("b");
+    name.textContent = item.name;
+    consigne.append(name, item.text);
+    block.append(consigne);
+  }
+  return block;
+}
+
+// Les consignes sont-elles dans la marge, ou dans la page faute de place ?
+// C'est un état de l'éditeur : en changer redessine les unes et retire les
+// autres dans la même mise à jour. Le dernier état connu sert de départ à
+// l'éditeur suivant, pour que les consignes ne changent pas de place sous les
+// yeux à chaque ouverture.
+let lastInMargin = true;
+const setConsignesInMargin = StateEffect.define<boolean>();
+
+const consignesInMargin = StateField.define<boolean>({
+  create: () => lastInMargin,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setConsignesInMargin)) value = effect.value;
+    return value;
+  },
+});
+
+function refreshConsignes() {
+  view.dispatch({ effects: consignesConf.reconfigure(consignesExtension()) });
+}
+
 // Coupure de page : un filet, et le numéro de la page qui commence, à droite
-// et suivi d'un point. La première page n'en a pas.
+// et suivi d'un point. La première page n'en a pas. Quand la fenêtre n'a pas
+// de marge, les consignes de la page sont dessous, centrées. Le même repère
+// marque les feuillets d'un texte vanilla.
 class PageBreakWidget extends WidgetType {
-  constructor(readonly page: number) {
+  constructor(
+    readonly page: number,
+    readonly consignes: Consigne[],
+    readonly unit = "Page",
+  ) {
     super();
   }
   eq(other: PageBreakWidget) {
-    return other.page === this.page;
+    return other.page === this.page && other.consignes === this.consignes && other.unit === this.unit;
   }
   toDOM() {
     const element = document.createElement("span");
     element.className = "cm-page-break";
-    element.setAttribute("aria-label", `Page ${this.page}`);
+    element.setAttribute("aria-label", `${this.unit} ${this.page}`);
     const rule = document.createElement("span");
     rule.className = "cm-page-rule";
     const number = document.createElement("span");
     number.className = "cm-page-number";
     number.textContent = `${this.page}.`;
     element.append(rule, number);
+    if (this.consignes.length) element.append(consignesBlock(this.consignes, "cm-consignes-in-page"));
     return element;
   }
 }
 
+// Les consignes de la première page, en tête du texte, quand la fenêtre n'a
+// pas de marge.
+class FirstPageWidget extends WidgetType {
+  constructor(readonly consignes: Consigne[]) {
+    super();
+  }
+  eq(other: FirstPageWidget) {
+    return other.consignes === this.consignes;
+  }
+  toDOM() {
+    return consignesBlock(this.consignes, "cm-consignes-in-page cm-consignes-first");
+  }
+}
+
 // Mise en page du scénario, recalculée à chaque modification du texte : la
-// nature de chaque ligne, et les coupures de page qui en découlent.
+// nature de chaque ligne, les coupures de page qui en découlent, et la place
+// des consignes déjà atteintes.
 interface ScreenplayLayout {
   kinds: LineKind[];
   breaks: PageBreak[];
+  // Début de la page de chaque groupe de consignes à montrer dans la marge.
+  notes: { pos: number; items: Consigne[] }[];
   decorations: DecorationSet;
 }
 
@@ -304,25 +405,162 @@ function computeLayout(state: EditorState): ScreenplayLayout {
   const lines = state.doc.toJSON();
   const kinds = classifyLines(lines);
   const breaks = paginate(lines, kinds);
-  const decorations = Decoration.set(
-    breaks.map((start, index) => {
-      const widget = new PageBreakWidget(index + 2);
-      const from = state.doc.line(start.line + 1).from;
-      // En début de ligne, la coupure se place entre deux lignes ; au milieu
-      // d'un paragraphe, elle s'insère dans le texte.
-      return start.offset > 0
-        ? Decoration.widget({ widget, side: -1 }).range(from + start.offset)
-        : Decoration.widget({ widget, side: -1, block: true }).range(from);
-    }),
-  );
-  return { kinds, breaks, decorations };
+  const groups = state.facet(consignesFacet);
+  const inMargin = state.field(consignesInMargin);
+  const starts = breaks.map((start) => state.doc.line(start.line + 1).from + start.offset);
+  const ranges = breaks.map((start, index) => {
+    const widget = new PageBreakWidget(index + 2, (inMargin ? undefined : groups.get(index + 2)) ?? NO_ITEMS);
+    // En début de ligne, la coupure se place entre deux lignes ; au milieu
+    // d'un paragraphe, elle s'insère dans le texte.
+    return start.offset > 0
+      ? Decoration.widget({ widget, side: -1 }).range(starts[index])
+      : Decoration.widget({ widget, side: -1, block: true }).range(starts[index]);
+  });
+  const first = inMargin ? undefined : groups.get(1);
+  if (first) ranges.unshift(Decoration.widget({ widget: new FirstPageWidget(first), side: -1, block: true }).range(0));
+  const notes = (inMargin ? shownConsignes(groups, breaks.length + 1) : []).map(([page, items]) => ({ pos: page === 1 ? 0 : starts[page - 2], items }));
+  return { kinds, breaks, notes, decorations: Decoration.set(ranges) };
 }
 
 const screenplayLayout = StateField.define<ScreenplayLayout>({
   create: computeLayout,
-  update: (value, tr) => (tr.docChanged ? computeLayout(tr.state) : value),
+  update: (value, tr) =>
+    tr.docChanged ||
+    tr.startState.facet(consignesFacet) !== tr.state.facet(consignesFacet) ||
+    tr.startState.field(consignesInMargin) !== tr.state.field(consignesInMargin)
+      ? computeLayout(tr.state)
+      : value,
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
 });
+
+// Feuillets d'un texte vanilla, recalculés à chaque modification du texte :
+// un repère au début de chaque feuillet, à partir du deuxième.
+interface SheetLayout {
+  breaks: PageBreak[];
+  decorations: DecorationSet;
+}
+
+function computeSheets(state: EditorState): SheetLayout {
+  const breaks = sheets(state.doc.toJSON());
+  const ranges = breaks.map((start, index) => {
+    const widget = new PageBreakWidget(index + 2, NO_ITEMS, "Feuillet");
+    const pos = state.doc.line(start.line + 1).from + start.offset;
+    return start.offset > 0 ? Decoration.widget({ widget, side: -1 }).range(pos) : Decoration.widget({ widget, side: -1, block: true }).range(pos);
+  });
+  return { breaks, decorations: Decoration.set(ranges) };
+}
+
+const sheetLayout = StateField.define<SheetLayout>({
+  create: computeSheets,
+  update: (value, tr) => (tr.docChanged ? computeSheets(tr.state) : value),
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+// Dans la marge, une consigne fait 30 caractères de large, plus un caractère
+// entre le filet et le texte, dans un corps réduit à 0,8.
+const CONSIGNE_CHARS = 31;
+const CONSIGNE_SCALE = 0.8;
+// Écart entre le bord de la page et le filet de la consigne, en pixels.
+const CONSIGNE_GAP = 16;
+// Place laissée à la barre de défilement, pour que son apparition ne fasse
+// pas basculer les consignes de la marge à la page.
+const SCROLLBAR_ROOM = 28;
+const HYSTERESIS = 16;
+
+class ConsigneMarker implements LayerMarker {
+  constructor(
+    readonly left: number,
+    readonly top: number,
+    readonly items: Consigne[],
+  ) {}
+  eq(other: ConsigneMarker) {
+    return other.left === this.left && other.top === this.top && other.items === this.items;
+  }
+  draw() {
+    const block = consignesBlock(this.items, "cm-consignes-margin");
+    block.style.left = `${this.left}px`;
+    block.style.top = `${this.top}px`;
+    return block;
+  }
+}
+
+// Haut de la ligne de texte qui commence à cette position, d'après les
+// hauteurs que l'éditeur connaît ou estime ; le repère de coupure de page qui
+// la précède n'est pas compté.
+function lineTop(view: EditorView, pos: number): number {
+  const block = view.lineBlockAt(pos);
+  const text = Array.isArray(block.type) ? block.type.find((part) => part.type === BlockType.Text) : undefined;
+  return (text ?? block).top + view.documentTop;
+}
+
+// Les consignes de la marge sont dessinées hors du texte, à droite de la
+// page et à hauteur de la première ligne de leur page. Seules celles des
+// pages affichées le sont.
+const consignesLayer = layer({
+  above: false,
+  class: "cm-consignes-layer",
+  update: (update) =>
+    update.docChanged ||
+    update.viewportChanged ||
+    update.geometryChanged ||
+    update.startState.field(screenplayLayout) !== update.state.field(screenplayLayout),
+  markers(view) {
+    const scroller = view.scrollDOM.getBoundingClientRect();
+    const baseLeft = scroller.left - view.scrollDOM.scrollLeft;
+    const baseTop = scroller.top - view.scrollDOM.scrollTop;
+    const left = view.contentDOM.getBoundingClientRect().right - baseLeft + CONSIGNE_GAP;
+    const markers: ConsigneMarker[] = [];
+    for (const note of view.state.field(screenplayLayout).notes) {
+      // Hors des lignes affichées, la place est celle que l'éditeur estime :
+      // une consigne haute de plusieurs lignes quitte l'écran en défilant,
+      // comme le texte, au lieu de disparaître d'un coup.
+      const shown = note.pos >= view.viewport.from && note.pos <= view.viewport.to;
+      const coords = shown ? view.coordsAtPos(note.pos, 1) : null;
+      markers.push(new ConsigneMarker(left, (coords ? coords.top : lineTop(view, note.pos)) - baseTop, note.items));
+    }
+    return markers;
+  },
+});
+
+// La marge a-t-elle la place d'une consigne ? Sinon, les consignes passent
+// dans la page ; elles reviennent dans la marge dès que la fenêtre le permet.
+const consignesPlace = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {
+      this.measure();
+    }
+    update(update: ViewUpdate) {
+      if (update.geometryChanged || update.viewportChanged) this.measure();
+    }
+    measure() {
+      this.view.requestMeasure({
+        key: this,
+        read: (view) => {
+          const inMargin = view.state.field(consignesInMargin);
+          const scroller = view.scrollDOM.getBoundingClientRect();
+          // Éditeur masqué (accueil, cork board) : rien à mesurer, rien ne change.
+          if (scroller.width === 0) return inMargin;
+          const room = scroller.right - view.contentDOM.getBoundingClientRect().right;
+          const needed = CONSIGNE_CHARS * CONSIGNE_SCALE * view.defaultCharacterWidth + CONSIGNE_GAP + SCROLLBAR_ROOM;
+          // Les consignes quittent la marge un peu plus tard qu'elles n'y
+          // entrent : une barre de défilement qui apparaît ou disparaît ne les
+          // fait pas aller et venir.
+          return room >= needed - (inMargin ? HYSTERESIS : 0);
+        },
+        write: (margin, view) => {
+          if (view.state.field(consignesInMargin) === margin) return;
+          lastInMargin = margin;
+          // Une mise à jour ne peut pas partir d'une mesure : elle la suit.
+          window.setTimeout(() => {
+            if (view.dom.isConnected && view.state.field(consignesInMargin, false) === !margin) {
+              view.dispatch({ effects: setConsignesInMargin.of(margin) });
+            }
+          });
+        },
+      });
+    }
+  },
+);
 
 // Saisie d'un dialogue. Tab fait de la ligne en cours un nom de personnage :
 // tant que le curseur y reste, ce qu'on tape passe en capitales. Entrée ouvre
@@ -589,6 +827,14 @@ const dialogueInput = EditorView.inputHandler.of((view, from, to, text) => {
   return false;
 });
 
+// Coupure de page ou début de feuillet : ni marge ni animation, le filet de
+// 1 px du régime écriture.
+const pageBreakTheme = EditorView.theme({
+  ".cm-page-break": { display: "block", padding: "0.8em 2px 0.8em 6px", userSelect: "none", textIndent: "0" },
+  ".cm-page-rule": { display: "block", borderTop: "1px solid var(--ink)" },
+  ".cm-page-number": { display: "block", paddingTop: "0.4em", textAlign: "right", fontWeight: "400", fontStyle: "normal", color: "var(--muted)" },
+});
+
 // Mise en page d'un scénario, en caractères de la police à chasse fixe (dix au
 // pouce). Le texte a la largeur de la page imprimée, pour que les lignes de
 // l'éditeur soient celles de la page et que les coupures tombent juste :
@@ -615,10 +861,33 @@ const fountainTheme = EditorView.theme({
   ".cm-fountain-section": { fontWeight: "700", color: "var(--muted)" },
   ".cm-fountain-synopsis": { fontStyle: "italic", color: "var(--muted)" },
   ".cm-fountain-title, .cm-fountain-pagebreak": { color: "var(--muted)" },
-  // Coupure de page : ni marge ni animation, le filet de 1 px du régime écriture.
-  ".cm-page-break": { display: "block", padding: "0.8em 2px 0.8em 6px", userSelect: "none", textIndent: "0" },
-  ".cm-page-rule": { display: "block", borderTop: "1px solid var(--ink)" },
-  ".cm-page-number": { display: "block", paddingTop: "0.4em", textAlign: "right", fontWeight: "400", fontStyle: "normal", color: "var(--muted)" },
+  // Consignes du modèle : texte secondaire, hors du scénario, sans animation.
+  ".cm-consignes": {
+    display: "block",
+    color: "var(--muted)",
+    fontWeight: "400",
+    fontStyle: "normal",
+    textTransform: "none",
+    textIndent: "0",
+    userSelect: "none",
+  },
+  ".cm-consigne": { display: "block" },
+  ".cm-consigne + .cm-consigne": { marginTop: "0.8em" },
+  ".cm-consigne b": { display: "block", fontWeight: "700" },
+  // Dans la page : centrées, sous le filet et le numéro.
+  ".cm-consignes-in-page": { textAlign: "center", padding: "0.8em 4ch" },
+  ".cm-consignes-first": { padding: "0 4ch 1.6em" },
+  // Dans la marge : 30 caractères de large, un filet fin à gauche.
+  ".cm-consignes-margin": {
+    position: "absolute",
+    width: "31ch",
+    boxSizing: "border-box",
+    paddingLeft: "1ch",
+    borderLeft: "1px solid var(--muted)",
+    fontSize: "0.8em",
+    lineHeight: "1.45",
+    pointerEvents: "none",
+  },
 });
 
 // Libellés du panneau de recherche de l'éditeur.
@@ -661,8 +930,12 @@ function createState(doc: string): EditorState {
       // Un scénario est mis en valeur ligne par ligne ; les autres formats
       // sont du Markdown.
       currentFormat === "scenario"
-        ? [screenplayLayout, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, dialogueKeys, dialogueInput]
+        ? [consignesInMargin, screenplayLayout, consignesLayer, consignesPlace, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, pageBreakTheme, dialogueKeys, dialogueInput]
         : [markdown(), syntaxHighlighting(textHighlight)],
+      // Un texte vanilla se compte en feuillets.
+      currentFormat === "vanilla" ? [sheetLayout, pageBreakTheme] : [],
+      // Présent dans tous les formats, pour être réglé sans condition.
+      consignesConf.of(consignesExtension()),
       EditorView.lineWrapping,
       // Les styles de l'éditeur passent par un thème : une feuille CSS ordinaire
       // est écrasée par les règles par défaut de CodeMirror.
@@ -754,8 +1027,8 @@ function createState(doc: string): EditorState {
           if (!dirty) setDirty(true);
           recordLatency();
           scheduleCounts(update.view);
-        } else if (update.selectionSet && currentFormat === "scenario") {
-          // Le numéro de la page en cours suit le curseur.
+        } else if (update.selectionSet && (currentFormat === "scenario" || currentFormat === "vanilla")) {
+          // Le numéro de la page ou du feuillet en cours suit le curseur.
           scheduleCounts(update.view);
         }
       }),
@@ -1172,6 +1445,14 @@ let recents: Recent[] = loadRecents();
 let texts = withRecents(loadTexts(), recents);
 saveTexts(texts);
 
+// Modèle et longueur cible retenus pour chaque scénario.
+let choices = loadChoices();
+
+function rememberChoice(path: string) {
+  choices = withChoice(choices, path, currentChoice);
+  saveChoices(choices);
+}
+
 function rememberRecent(path: string) {
   recents = addRecent(recents, path, currentFormat, new Date());
   saveRecents(recents);
@@ -1187,8 +1468,10 @@ function forgetRecent(path: string) {
 // Remplace le texte affiché. Un nouvel état, plutôt qu'un remplacement du
 // texte : l'historique d'annulation repart de zéro et Ctrl + Z ne ramène pas
 // l'ancien texte.
-function loadDocument(text: string, path: string | undefined, format: Format) {
+function loadDocument(text: string, path: string | undefined, format: Format, choice?: Choice) {
   movedHeading = undefined;
+  // Le choix d'un fichier est celui que l'app a retenu ; un texte neuf apporte le sien.
+  currentChoice = choice ?? (path ? knownChoice(choices, path) : NO_MODEL);
   setFormat(format);
   ({ title: coverTitle, source: coverSource } = loadCover(path));
   show("text");
@@ -1220,11 +1503,15 @@ function confirmDiscard(title: string, confirmLabel: string, action: () => void)
   newDialog.showModal();
 }
 
+// Un scénario neuf choisit d'abord son modèle ; « Annuler » ne crée rien.
 function requestNewDocument(format: Format) {
-  confirmDiscard("Nouveau texte", "Effacer et créer", () => {
-    loadDocument("", undefined, format);
-    setStatus("");
-  });
+  const create = (choice: Choice) =>
+    confirmDiscard("Nouveau texte", "Effacer et créer", () => {
+      loadDocument("", undefined, format, choice);
+      setStatus(format === "scenario" && choice.model ? choiceMessage(choice, modelTarget.value) : "");
+    });
+  if (format === "scenario") askModel("Créer", NO_MODEL, create);
+  else create(NO_MODEL);
 }
 
 // Ouvre le fichier indiqué. Renvoie faux si la lecture a échoué ; le fichier
@@ -1296,6 +1583,10 @@ async function writeDocument(path: string) {
     importName = undefined;
     refreshFormatMenu();
     rememberRecent(path);
+    // Le choix d'un scénario pas encore enregistré s'attache ici à son fichier,
+    // et suit « Enregistrer sous… ». Un texte qui n'est plus un scénario garde
+    // le sien, et n'hérite pas de celui d'un fichier qu'il remplace.
+    rememberChoice(path);
     setDirty(view.state.doc.toString() !== text);
     const now = new Date();
     setStatus(savedMessage(now, now, path));
@@ -1551,6 +1842,76 @@ formatChoices.addEventListener("click", (event) => {
 
 
 document.querySelector<HTMLButtonElement>("#format-cancel")!.addEventListener("click", () => formatDialog.close());
+
+// ---------------------------------------------------------------------------
+// Modèle du scénario : choisi à la création, changé par Scénario > Modèle…
+// ---------------------------------------------------------------------------
+
+const modelDialog = document.querySelector<HTMLDialogElement>("#model-dialog")!;
+const modelChoices = document.querySelector<HTMLDivElement>("#model-choices")!;
+const modelTarget = document.querySelector<HTMLInputElement>("#model-target")!;
+const modelConfirm = document.querySelector<HTMLButtonElement>("#model-confirm")!;
+
+function modelOption(id: string, name: string, detail: string) {
+  const label = document.createElement("label");
+  const radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = "model";
+  radio.value = id;
+  // Le nom et sa présentation forment un seul bloc : une présentation qui
+  // passe à la ligne reste alignée sous le nom.
+  const text = document.createElement("span");
+  const strong = document.createElement("strong");
+  strong.textContent = name;
+  text.append(strong);
+  if (detail) {
+    const small = document.createElement("small");
+    small.textContent = detail;
+    text.append(" ", small);
+  }
+  label.append(radio, text);
+  modelChoices.append(label);
+}
+
+modelOption("", "Sans modèle", "");
+for (const template of TEMPLATES) modelOption(template.id, template.name, `${template.line} ${template.steps.length} étapes.`);
+
+let modelAction: ((choice: Choice) => void) | undefined;
+
+// Le choix proposé est coché et reçoit le focus : Entrée suffit.
+function askModel(confirmLabel: string, current: Choice, action: (choice: Choice) => void) {
+  if (document.querySelector("dialog[open]")) return;
+  modelAction = action;
+  modelConfirm.textContent = confirmLabel;
+  for (const radio of modelChoices.querySelectorAll<HTMLInputElement>("input")) radio.checked = radio.value === current.model;
+  modelTarget.value = String(current.target);
+  modelDialog.returnValue = "cancel";
+  modelDialog.showModal();
+  modelChoices.querySelector<HTMLInputElement>("input:checked")?.focus();
+}
+
+document.querySelector<HTMLButtonElement>("#model-cancel")!.addEventListener("click", () => modelDialog.close("cancel"));
+
+modelDialog.addEventListener("close", () => {
+  const action = modelAction;
+  modelAction = undefined;
+  if (modelDialog.returnValue !== "confirm") return;
+  const model = modelChoices.querySelector<HTMLInputElement>("input:checked")?.value ?? "";
+  action?.(normalizeChoice({ model, target: modelTarget.value }));
+});
+
+// Scénario > Modèle… : le modèle du scénario affiché change, le texte reste tel quel.
+function chooseModel() {
+  askModel("Appliquer", currentChoice, (choice) => {
+    currentChoice = choice;
+    if (currentPath) rememberChoice(currentPath);
+    refreshFormatLabel();
+    refreshConsignes();
+    setStatus(choiceMessage(choice, modelTarget.value));
+    view.focus();
+  });
+}
+
 document.querySelector<HTMLButtonElement>("#home-open")!.addEventListener("click", requestOpenDocument);
 
 // ---------------------------------------------------------------------------
@@ -1594,6 +1955,7 @@ settingsForm.addEventListener("change", () => {
     size,
     startup: data.get("startup"),
     nbsp: settings.nbsp,
+    consignes: settings.consignes,
   });
   sizeInput.value = String(settings.size);
   applySettings(settings);
@@ -1629,6 +1991,27 @@ function toggleNbsp() {
 }
 
 syncNbspMenu();
+
+// ---------------------------------------------------------------------------
+// Consignes du modèle : affichées ou masquées depuis le menu Affichage
+// ---------------------------------------------------------------------------
+
+// La case du menu suit le réglage, y compris au lancement.
+function syncConsignesMenu() {
+  invoke("set_menu_item_checked", { id: "view-consignes", checked: settings.consignes }).catch((error) => {
+    setStatus(`le menu Affichage n'a pas pu être mis à jour (${error})`, true);
+  });
+}
+
+function toggleConsignes() {
+  settings = { ...settings, consignes: !settings.consignes };
+  saveSettings(settings);
+  refreshConsignes();
+  syncConsignesMenu();
+  setStatus(settings.consignes ? "Les consignes du modèle sont affichées." : "Les consignes du modèle sont masquées.");
+}
+
+syncConsignesMenu();
 
 // ---------------------------------------------------------------------------
 // Recherche : le panneau de l'éditeur, ouvert sur la vue Texte
@@ -1849,7 +2232,9 @@ const ACTIONS: Record<string, () => void> = {
   "view-text": () => show("text"),
   "view-board": () => show("board"),
   "view-fullscreen": toggleFullscreen,
+  "view-consignes": toggleConsignes,
   "scenario-cover": openCover,
+  "scenario-model": chooseModel,
   "help-about": openAbout,
 };
 
@@ -1868,7 +2253,12 @@ function runAction(id: string) {
   lastAction = id;
   lastActionTime = now;
   // Une boîte de dialogue ouverte suspend les actions du menu.
-  if (document.querySelector("dialog[open]")) return;
+  if (document.querySelector("dialog[open]")) {
+    // Le menu a déjà basculé sa case : elle reprend l'état de l'app.
+    if (id === "edit-nbsp") syncNbspMenu();
+    if (id === "view-consignes") syncConsignesMenu();
+    return;
+  }
   // Les commandes d'édition agissent sur le texte : elles n'ont de sens que
   // si la vue Texte est affichée.
   if (id.startsWith("edit-") && id !== "edit-settings" && id !== "edit-nbsp" && viewText.hidden) {
@@ -1877,6 +2267,10 @@ function runAction(id: string) {
   }
   if (id === "scenario-cover" && currentFormat !== "scenario") {
     setStatus("La page de couverture est propre au format scénario.");
+    return;
+  }
+  if (id === "scenario-model" && currentFormat !== "scenario") {
+    setStatus("Les modèles sont propres au format scénario.");
     return;
   }
   if (id === "view-board" && currentFormat === "vanilla") {
