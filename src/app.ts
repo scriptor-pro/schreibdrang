@@ -38,6 +38,8 @@ import {
 } from "./fountain";
 import type { LineKind } from "./fountain";
 import { savedMessage } from "./dates";
+import { DEFAULT_SETUP, formatDecimal, knownSetup, loadSetups, normalizeSetup, saveSetups, setupMessage, sheetStyle, withSetup } from "./miseenpage";
+import type { PageSetup } from "./miseenpage";
 import { pageAt, paginate, printedPages, printedStyles, sheets } from "./pagination";
 import type { PageBreak } from "./pagination";
 import type { Author, AuthorField, Cover, Missing } from "./cover";
@@ -226,6 +228,10 @@ let importName: string | undefined;
 // scénario garde le sien en mémoire, sans l'afficher.
 let currentChoice: Choice = NO_MODEL;
 
+// Interligne et marges du texte vanilla affiché. Un texte d'un autre format
+// garde les siens en mémoire, sans les appliquer.
+let currentSetup: PageSetup = { ...DEFAULT_SETUP };
+
 // Titre et œuvre d'origine saisis pour la couverture du scénario affiché.
 let coverTitle = "";
 let coverSource = "";
@@ -246,6 +252,10 @@ function setFormat(format: Format) {
   currentFormat = format;
   refreshFormatLabel();
   btnBoard.disabled = format === "vanilla";
+  // La mise en page ne se règle qu'au format vanilla.
+  invoke("set_menu_item_enabled", { id: "file-layout", enabled: format === "vanilla" }).catch((error) => {
+    setStatus(`le menu Fichier n'a pas pu être mis à jour (${error})`, true);
+  });
   // Les menus du scénario n'agissent qu'au format scénario.
   for (const id of ["scenario-model", "scenario-cover", "view-consignes"]) {
     invoke("set_menu_item_enabled", { id, enabled: format === "scenario" }).catch((error) => {
@@ -827,6 +837,20 @@ const dialogueInput = EditorView.inputHandler.of((view, from, to, text) => {
   return false;
 });
 
+// La feuille d'un texte vanilla : une feuille A4 bordée d'un filet à gauche
+// et à droite, avec l'interligne et les marges choisis pour ce texte.
+const sheetConf = new Compartment();
+
+function sheetExtension() {
+  if (currentFormat !== "vanilla") return [];
+  const { lineHeight, ...sheet } = sheetStyle(currentSetup);
+  // Plus précis que le thème de l'éditeur, qui fixe la largeur et l'interligne.
+  return EditorView.theme({
+    "&.cm-editor .cm-scroller": { lineHeight },
+    "& .cm-scroller .cm-content": { ...sheet, boxSizing: "border-box", borderLeft: "1px solid var(--ink)", borderRight: "1px solid var(--ink)" },
+  });
+}
+
 // Coupure de page ou début de feuillet : ni marge ni animation, le filet de
 // 1 px du régime écriture.
 const pageBreakTheme = EditorView.theme({
@@ -932,8 +956,9 @@ function createState(doc: string): EditorState {
       currentFormat === "scenario"
         ? [consignesInMargin, screenplayLayout, consignesLayer, consignesPlace, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, pageBreakTheme, dialogueKeys, dialogueInput]
         : [markdown(), syntaxHighlighting(textHighlight)],
-      // Un texte vanilla se compte en feuillets.
+      // Un texte vanilla se compte en feuillets, sur une feuille à sa mise en page.
       currentFormat === "vanilla" ? [sheetLayout, pageBreakTheme] : [],
+      sheetConf.of(sheetExtension()),
       // Présent dans tous les formats, pour être réglé sans condition.
       consignesConf.of(consignesExtension()),
       EditorView.lineWrapping,
@@ -1453,6 +1478,14 @@ function rememberChoice(path: string) {
   saveChoices(choices);
 }
 
+// Mise en page retenue pour chaque texte vanilla.
+let setups = loadSetups();
+
+function rememberSetup(path: string) {
+  setups = withSetup(setups, path, currentSetup);
+  saveSetups(setups);
+}
+
 function rememberRecent(path: string) {
   recents = addRecent(recents, path, currentFormat, new Date());
   saveRecents(recents);
@@ -1472,6 +1505,7 @@ function loadDocument(text: string, path: string | undefined, format: Format, ch
   movedHeading = undefined;
   // Le choix d'un fichier est celui que l'app a retenu ; un texte neuf apporte le sien.
   currentChoice = choice ?? (path ? knownChoice(choices, path) : NO_MODEL);
+  currentSetup = path ? knownSetup(setups, path) : { ...DEFAULT_SETUP };
   setFormat(format);
   ({ title: coverTitle, source: coverSource } = loadCover(path));
   show("text");
@@ -1587,6 +1621,8 @@ async function writeDocument(path: string) {
     // et suit « Enregistrer sous… ». Un texte qui n'est plus un scénario garde
     // le sien, et n'hérite pas de celui d'un fichier qu'il remplace.
     rememberChoice(path);
+    // De même pour la mise en page d'un texte vanilla.
+    rememberSetup(path);
     setDirty(view.state.doc.toString() !== text);
     const now = new Date();
     setStatus(savedMessage(now, now, path));
@@ -1727,7 +1763,9 @@ exportDialog.addEventListener("close", async () => {
       return;
     }
     const fountain = format === "fountain" ? fountainExport() : undefined;
-    await invoke("export_document", { path, format, markdown: fountain?.text ?? view.state.doc.toString() });
+    // Un texte vanilla s'exporte avec son interligne et ses marges.
+    const layout = currentFormat === "vanilla" ? currentSetup : null;
+    await invoke("export_document", { path, format, markdown: fountain?.text ?? view.state.doc.toString(), layout });
     const seconds = ((performance.now() - start) / 1000).toFixed(1);
     setStatus(
       fountain && !fountain.titled
@@ -1911,6 +1949,39 @@ function chooseModel() {
     view.focus();
   });
 }
+
+// ---------------------------------------------------------------------------
+// Mise en page d'un texte vanilla : Fichier > Mise en page…
+// ---------------------------------------------------------------------------
+
+const layoutDialog = document.querySelector<HTMLDialogElement>("#layout-dialog")!;
+const layoutForm = layoutDialog.querySelector("form")!;
+const LAYOUT_FIELDS = ["spacing", "top", "bottom", "left", "right"] as const;
+
+function layoutInput(field: (typeof LAYOUT_FIELDS)[number]) {
+  return layoutForm.elements.namedItem(field) as HTMLInputElement;
+}
+
+// Les champs montrent la mise en page du texte ; l'interligne reçoit le focus.
+function chooseLayout() {
+  if (document.querySelector("dialog[open]")) return;
+  for (const field of LAYOUT_FIELDS) layoutInput(field).value = formatDecimal(currentSetup[field]);
+  layoutDialog.returnValue = "cancel";
+  layoutDialog.showModal();
+  layoutInput("spacing").select();
+}
+
+document.querySelector<HTMLButtonElement>("#layout-cancel")!.addEventListener("click", () => layoutDialog.close("cancel"));
+
+layoutDialog.addEventListener("close", () => {
+  if (layoutDialog.returnValue !== "confirm") return;
+  const typed = Object.fromEntries(LAYOUT_FIELDS.map((field) => [field, layoutInput(field).value])) as Record<(typeof LAYOUT_FIELDS)[number], string>;
+  currentSetup = normalizeSetup(typed);
+  if (currentPath) rememberSetup(currentPath);
+  view.dispatch({ effects: sheetConf.reconfigure(sheetExtension()) });
+  setStatus(setupMessage(typed));
+  view.focus();
+});
 
 document.querySelector<HTMLButtonElement>("#home-open")!.addEventListener("click", requestOpenDocument);
 
@@ -2217,6 +2288,7 @@ const ACTIONS: Record<string, () => void> = {
   "file-save-as": saveDocumentAs,
   "file-export": () => btnExport.click(),
   "file-format": chooseFormat,
+  "file-layout": chooseLayout,
   "file-find": openSearch,
   "file-test": loadTestText,
   "file-quit": requestQuit,
@@ -2240,7 +2312,7 @@ const ACTIONS: Record<string, () => void> = {
 
 // Actions du menu Fichier sans objet tant qu'il n'y a aucun texte ; leurs
 // boutons sont alors désactivés.
-const NEEDS_TEXT = new Set(["file-save", "file-save-as", "file-export", "file-format"]);
+const NEEDS_TEXT = new Set(["file-save", "file-save-as", "file-export", "file-format", "file-layout"]);
 
 // Un raccourci peut arriver deux fois, par le menu natif et par la page :
 // la même action n'est exécutée qu'une fois par quart de seconde.
@@ -2271,6 +2343,10 @@ function runAction(id: string) {
   }
   if (id === "scenario-model" && currentFormat !== "scenario") {
     setStatus("Les modèles sont propres au format scénario.");
+    return;
+  }
+  if (id === "file-layout" && currentFormat !== "vanilla") {
+    setStatus("La mise en page se règle au format vanilla.");
     return;
   }
   if (id === "view-board" && currentFormat === "vanilla") {

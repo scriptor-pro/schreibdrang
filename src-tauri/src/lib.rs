@@ -83,9 +83,156 @@ fn run_pandoc(markdown: &str, output: &Path, args: &[String]) -> Result<(), Stri
     }
 }
 
-fn export(path: &Path, format: &str, markdown: &str) -> Result<(), String> {
+/// Mise en page d'un texte vanilla : l'interligne, en nombre de lignes, et les
+/// quatre marges, en centimètres.
+#[derive(serde::Deserialize, Clone, Copy)]
+struct Layout {
+    spacing: f64,
+    top: f64,
+    bottom: f64,
+    left: f64,
+    right: f64,
+}
+
+/// Un nombre au dixième, sans zéro inutile : « 2.5 », « 3 ».
+fn tenths(value: f64) -> String {
+    let text = format!("{value:.1}");
+    text.strip_suffix(".0").unwrap_or(&text).to_string()
+}
+
+/// Les variables de Pandoc qui donnent au PDF ses marges et son interligne.
+fn pdf_layout(layout: Option<Layout>) -> Vec<String> {
+    match layout {
+        None => vec!["geometry:margin=2.5cm".to_string()],
+        Some(layout) => vec![
+            format!(
+                "geometry:top={}cm,bottom={}cm,left={}cm,right={}cm",
+                tenths(layout.top),
+                tenths(layout.bottom),
+                tenths(layout.left),
+                tenths(layout.right)
+            ),
+            format!("linestretch={}", tenths(layout.spacing)),
+        ],
+    }
+}
+
+/// Une longueur en vingtièmes de point, l'unité de Word.
+fn twips(cm: f64) -> i64 {
+    (cm * 1440.0 / 2.54).round() as i64
+}
+
+/// Insère ce texte juste après le premier `anchor` qui suit `after`.
+fn insert_after(xml: &str, after: &str, anchor: &str, text: &str) -> Result<String, String> {
+    let from = xml.find(after).ok_or_else(|| format!("Modèle de document inattendu : « {after} » est introuvable."))?;
+    let at = xml[from..]
+        .find(anchor)
+        .ok_or_else(|| format!("Modèle de document inattendu : « {anchor} » est introuvable."))?
+        + from
+        + anchor.len();
+    Ok(format!("{}{}{}", &xml[..at], text, &xml[at..]))
+}
+
+/// Le corps du modèle Word, avec une feuille A4 et ses marges.
+fn docx_document(xml: &str, layout: Layout) -> Result<String, String> {
+    if !xml.contains("<w:sectPr />") {
+        return Err("Modèle Word inattendu : la section est introuvable.".to_string());
+    }
+    let section = format!(
+        r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="708" w:footer="708" w:gutter="0" /></w:sectPr>"#,
+        twips(layout.top),
+        twips(layout.right),
+        twips(layout.bottom),
+        twips(layout.left)
+    );
+    Ok(xml.replacen("<w:sectPr />", &section, 1))
+}
+
+/// Les styles du modèle Word, avec l'interligne : 240 pour une ligne.
+fn docx_styles(xml: &str, layout: Layout) -> Result<String, String> {
+    let line = (layout.spacing * 240.0).round() as i64;
+    insert_after(xml, "<w:pPrDefault>", "<w:spacing ", &format!(r#"w:line="{line}" w:lineRule="auto" "#))
+}
+
+/// Remplace la valeur d'un attribut, dans la balise qui commence à `from`.
+fn set_attribute(xml: &mut String, from: usize, name: &str, value: &str) -> Result<(), String> {
+    let missing = || format!("Modèle OpenDocument inattendu : « {name} » est introuvable.");
+    let end = xml[from..].find('>').ok_or_else(missing)? + from;
+    let start = xml[from..end].find(&format!("{name}=\"")).ok_or_else(missing)? + from + name.len() + 2;
+    let stop = xml[start..].find('"').ok_or_else(missing)? + start;
+    xml.replace_range(start..stop, value);
+    Ok(())
+}
+
+/// Les styles du modèle OpenDocument, avec une feuille A4, ses marges et
+/// l'interligne.
+fn odt_styles(xml: &str, layout: Layout) -> Result<String, String> {
+    let mut xml = insert_after(
+        xml,
+        r#"<style:default-style style:family="paragraph">"#,
+        "<style:paragraph-properties ",
+        &format!(r#"fo:line-height="{}%" "#, (layout.spacing * 100.0).round() as i64),
+    )?;
+    let page = xml
+        .find("<style:page-layout-properties ")
+        .ok_or("Modèle OpenDocument inattendu : la page est introuvable.")?;
+    let cm = |value: f64| format!("{}cm", tenths(value));
+    for (name, value) in [
+        ("fo:page-width", "21cm".to_string()),
+        ("fo:page-height", "29.7cm".to_string()),
+        ("fo:margin-top", cm(layout.top)),
+        ("fo:margin-bottom", cm(layout.bottom)),
+        ("fo:margin-left", cm(layout.left)),
+        ("fo:margin-right", cm(layout.right)),
+    ] {
+        set_attribute(&mut xml, page, name, &value)?;
+    }
+    Ok(xml)
+}
+
+/// Copie un modèle Word ou OpenDocument en lui donnant cette mise en page. Les
+/// autres fichiers de l'archive sont repris tels quels, dans le même ordre.
+fn reference_with_layout(source: &Path, target: &Path, layout: Layout) -> Result<(), String> {
+    let text = |e: zip::result::ZipError| e.to_string();
+    let mut archive = zip::ZipArchive::new(fs::File::open(source).map_err(|e| e.to_string())?).map_err(text)?;
+    let mut writer = zip::ZipWriter::new(fs::File::create(target).map_err(|e| e.to_string())?);
+    for index in 0..archive.len() {
+        let name = archive.by_index_raw(index).map_err(text)?.name().to_string();
+        let patch: Option<fn(&str, Layout) -> Result<String, String>> = match name.as_str() {
+            "word/document.xml" => Some(docx_document),
+            "word/styles.xml" => Some(docx_styles),
+            "styles.xml" => Some(odt_styles),
+            _ => None,
+        };
+        match patch {
+            Some(patch) => {
+                let mut xml = String::new();
+                std::io::Read::read_to_string(&mut archive.by_index(index).map_err(text)?, &mut xml).map_err(|e| e.to_string())?;
+                writer
+                    .start_file(name, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated))
+                    .map_err(text)?;
+                writer.write_all(patch(&xml, layout)?.as_bytes()).map_err(|e| e.to_string())?;
+            }
+            None => writer.raw_copy_file(archive.by_index_raw(index).map_err(text)?).map_err(text)?,
+        }
+    }
+    writer.finish().map_err(text)?;
+    Ok(())
+}
+
+fn export(path: &Path, format: &str, markdown: &str, layout: Option<Layout>) -> Result<(), String> {
     let resources = resources_dir()?;
-    let reference = |name: &str| format!("--reference-doc={}", resources.join(name).display());
+    // Le modèle de document : celui de l'app, ou sa copie à la mise en page
+    // d'un texte vanilla.
+    let reference = |name: &str| -> Result<String, String> {
+        let model = resources.join(name);
+        let Some(layout) = layout else {
+            return Ok(format!("--reference-doc={}", model.display()));
+        };
+        let copy = resources.join(format!("mise-en-page-{name}"));
+        reference_with_layout(&model, &copy, layout)?;
+        Ok(format!("--reference-doc={}", copy.display()))
+    };
 
     match format {
         // Markdown et Fountain : le texte est écrit tel quel.
@@ -95,21 +242,21 @@ fn export(path: &Path, format: &str, markdown: &str) -> Result<(), String> {
             path,
             &["--to=plain".into(), "--wrap=none".into()],
         ),
-        "docx" => run_pandoc(markdown, path, &[reference("reference.docx")]),
-        "odt" => run_pandoc(markdown, path, &[reference("reference.odt")]),
+        "docx" => run_pandoc(markdown, path, &[reference("reference.docx")?]),
+        "odt" => run_pandoc(markdown, path, &[reference("reference.odt")?]),
         "pdf" => {
-            let variables = [
+            let mut variables = vec![
                 "documentclass=report".to_string(),
                 "lang=fr".to_string(),
                 "papersize=a4".to_string(),
                 "fontsize=11pt".to_string(),
-                "geometry:margin=2.5cm".to_string(),
                 "mainfont=Literata-Regular.ttf".to_string(),
                 format!("mainfontoptions=Path={}/", resources.join("fonts").display()),
                 "mainfontoptions=BoldFont=Literata-Bold.ttf".to_string(),
                 "mainfontoptions=ItalicFont=Literata-Italic.ttf".to_string(),
                 "mainfontoptions=BoldItalicFont=Literata-BoldItalic.ttf".to_string(),
             ];
+            variables.extend(pdf_layout(layout));
             let mut args = vec![
                 "--pdf-engine=xelatex".to_string(),
                 "--top-level-division=chapter".to_string(),
@@ -181,10 +328,10 @@ async fn import_document(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn export_document(path: String, format: String, markdown: String) -> Result<(), String> {
+async fn export_document(path: String, format: String, markdown: String, layout: Option<Layout>) -> Result<(), String> {
     // La conversion peut durer plusieurs dizaines de secondes : elle tourne
     // hors du fil principal pour ne pas figer l'interface.
-    tauri::async_runtime::spawn_blocking(move || export(Path::new(&path), &format, &markdown))
+    tauri::async_runtime::spawn_blocking(move || export(Path::new(&path), &format, &markdown, layout))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -513,6 +660,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .build(app)
     };
 
+    // Inactive au lancement : la page l'active quand le texte est vanilla.
+    let layout = MenuItemBuilder::with_id("file-layout", "Mise en page…")
+        .enabled(false)
+        .build(app)?;
+
     let file = SubmenuBuilder::new(app, "Fichier")
         .item(&item("file-new", "Nouveau", Some("CmdOrCtrl+N"))?)
         .item(&item("file-open", "Ouvrir…", Some("CmdOrCtrl+O"))?)
@@ -522,6 +674,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("file-export", "Exporter…", None)?)
         .separator()
         .item(&item("file-format", "Format du texte…", None)?)
+        .item(&layout)
         .separator()
         .item(&item("file-find", "Chercher et remplacer…", Some("CmdOrCtrl+F"))?)
         .separator()
@@ -812,5 +965,103 @@ mod tests {
             assert!(!text.contains("image") && !text.contains('{') && !text.contains('<'), "{extension} : {text}");
         }
         assert!(import(Path::new("/aucun/fichier.docx")).is_err());
+    }
+
+    const LAYOUT: Layout = Layout { spacing: 1.5, top: 2.0, bottom: 3.0, left: 2.5, right: 1.2 };
+
+    /// Un fichier d'une archive embarquée, en texte.
+    fn entry(archive: &[u8], name: &str) -> String {
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).unwrap();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name(name).unwrap(), &mut text).unwrap();
+        text
+    }
+
+    fn resource(name: &str) -> &'static [u8] {
+        RESOURCES.iter().find(|(file, _)| *file == name).unwrap().1
+    }
+
+    #[test]
+    fn pdf_garde_ses_marges_sans_mise_en_page() {
+        assert_eq!(pdf_layout(None), ["geometry:margin=2.5cm"]);
+    }
+
+    #[test]
+    fn pdf_reprend_les_marges_et_l_interligne() {
+        assert_eq!(pdf_layout(Some(LAYOUT)), ["geometry:top=2cm,bottom=3cm,left=2.5cm,right=1.2cm", "linestretch=1.5"]);
+    }
+
+    #[test]
+    fn modele_word_recoit_la_feuille_a4_les_marges_et_l_interligne() {
+        let document = docx_document(&entry(resource("reference.docx"), "word/document.xml"), LAYOUT).unwrap();
+        // 2 cm font 1 134 vingtièmes de point.
+        assert!(document.contains(r#"<w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="1134" w:right="680" w:bottom="1701" w:left="1417" "#));
+        assert!(!document.contains("<w:sectPr />"));
+        let styles = docx_styles(&entry(resource("reference.docx"), "word/styles.xml"), LAYOUT).unwrap();
+        assert!(styles.contains(r#"<w:spacing w:line="360" w:lineRule="auto" w:after="200" />"#));
+    }
+
+    #[test]
+    fn modele_opendocument_recoit_la_feuille_a4_les_marges_et_l_interligne() {
+        let styles = odt_styles(&entry(resource("reference.odt"), "styles.xml"), LAYOUT).unwrap();
+        for attribute in [
+            r#"fo:page-width="21cm""#,
+            r#"fo:page-height="29.7cm""#,
+            r#"fo:margin-top="2cm""#,
+            r#"fo:margin-bottom="3cm""#,
+            r#"fo:margin-left="2.5cm""#,
+            r#"fo:margin-right="1.2cm""#,
+            r#"<style:paragraph-properties fo:line-height="150%" fo:hyphenation-ladder-count"#,
+        ] {
+            assert!(styles.contains(attribute), "{attribute}");
+        }
+        // Les marges du pied de page, plus loin dans le modèle, ne changent pas.
+        assert!(styles.contains(r#"fo:margin-left="0in" fo:margin-right="0in""#));
+    }
+
+    #[test]
+    fn modele_inattendu_est_refuse() {
+        assert!(docx_document("<w:body></w:body>", LAYOUT).is_err());
+        assert!(docx_styles("<w:styles></w:styles>", LAYOUT).is_err());
+        assert!(odt_styles("<office:styles></office:styles>", LAYOUT).is_err());
+    }
+
+    #[test]
+    fn copie_du_modele_garde_ses_fichiers_dans_l_ordre() {
+        let dir = std::env::temp_dir().join(format!("schreibdrang-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["reference.docx", "reference.odt"] {
+            let source = dir.join(name);
+            let target = dir.join(format!("copie-{name}"));
+            fs::write(&source, resource(name)).unwrap();
+            reference_with_layout(&source, &target, LAYOUT).unwrap();
+            let names = |bytes: &[u8]| {
+                let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+                (0..zip.len()).map(|index| zip.by_index_raw(index).unwrap().name().to_string()).collect::<Vec<_>>()
+            };
+            let copy = fs::read(&target).unwrap();
+            assert_eq!(names(&copy), names(resource(name)));
+            let styles = if name == "reference.odt" { "styles.xml" } else { "word/styles.xml" };
+            assert!(entry(&copy, styles).contains(if name == "reference.odt" { "fo:line-height=\"150%\"" } else { "w:line=\"360\"" }));
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn les_exports_d_un_texte_vanilla_portent_sa_mise_en_page() {
+        let dir = std::env::temp_dir().join(format!("schreibdrang-test-export-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let text = "Un premier paragraphe.\n\nUn second paragraphe.\n";
+        export(&dir.join("texte.docx"), "docx", text, Some(LAYOUT)).unwrap();
+        let docx = fs::read(dir.join("texte.docx")).unwrap();
+        assert!(entry(&docx, "word/document.xml").contains(r#"w:top="1134""#));
+        assert!(entry(&docx, "word/styles.xml").contains(r#"w:line="360""#));
+        export(&dir.join("texte.odt"), "odt", text, Some(LAYOUT)).unwrap();
+        let odt = fs::read(dir.join("texte.odt")).unwrap();
+        assert!(entry(&odt, "styles.xml").contains(r#"fo:margin-top="2cm""#));
+        assert!(entry(&odt, "styles.xml").contains(r#"fo:line-height="150%""#));
+        export(&dir.join("texte.pdf"), "pdf", text, Some(LAYOUT)).unwrap();
+        assert!(fs::read(dir.join("texte.pdf")).unwrap().starts_with(b"%PDF"));
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

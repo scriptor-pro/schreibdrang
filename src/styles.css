@@ -432,8 +432,17 @@ body.whole-screen #home {
   color: var(--muted);
 }
 
-#model-target {
+#model-target,
+#layout-spacing {
   max-width: 8rem;
+}
+
+#layout-dialog {
+  width: min(30rem, 92vw);
+}
+
+#layout-dialog .field {
+  margin-bottom: 1rem;
 }
 
 #format-choices {

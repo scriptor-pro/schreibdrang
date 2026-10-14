@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.36, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.37, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
@@ -18,7 +18,7 @@ Ce qui fonctionne :
 - **Format nouvelle** : des scènes sans chapitres, avec un cork board d'une seule colonne.
 - **Format du texte** : retenu pour chaque fichier ; demandé à l'ouverture d'un fichier `.md` ou `.txt` inconnu, et modifiable par Fichier > Format du texte…. Un fichier `.fountain` est toujours un scénario.
 - **Import** d'un document Word (`.docx`) ou OpenDocument (`.odt`) par « Ouvrir… » : il devient un nouveau texte en Markdown, le document d'origine n'est pas modifié.
-- **Format vanilla** : un texte libre, d'un seul tenant, sans cork board, compté en feuillets de 1 500 signes : le pied de page donne le feuillet du curseur et le total, un repère numéroté marque chaque feuillet dans le texte. 
+- **Format vanilla** : un texte libre, d'un seul tenant, sans cork board, compté en feuillets de 1 500 signes : le pied de page donne le feuillet du curseur et le total, un repère numéroté marque chaque feuillet dans le texte. Fichier > Mise en page… règle son interligne et ses quatre marges, retenus pour chaque fichier, visibles à l'écran sur une feuille A4 et repris par les exports PDF, Word et OpenDocument. 
 - **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
 - **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
@@ -73,6 +73,7 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/fountain.ts` | scénario en Fountain : nature des lignes, découpage en scènes |
 | `src/pagination.ts` | découpage d'un scénario en pages, d'un texte vanilla en feuillets |
 | `src/dates.ts` | dates en toutes lettres, message d'enregistrement |
+| `src/miseenpage.ts` | interligne et marges d'un texte vanilla, retenus pour chaque fichier |
 | `src/textes.ts` | format, modèle et longueur cible retenus pour chaque fichier, nature d'un fichier d'après son extension |
 | `src/templates.ts` | modèles de scénario : page de chaque étape, consignes à montrer |
 | `src/consignes.ts` | les huit modèles et leurs 91 consignes |
