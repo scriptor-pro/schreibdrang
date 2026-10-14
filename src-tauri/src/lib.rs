@@ -6,8 +6,9 @@ use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Subm
 use tauri::{AppHandle, Emitter, WebviewWindow, Wry};
 
 // Fichiers nécessaires à l'export, embarqués dans l'exécutable : les modèles
-// Word et OpenDocument réglés sur Literata, la police elle-même pour le PDF,
-// et Courier Prime pour la couverture et le PDF d'un scénario.
+// Word et OpenDocument réglés sur Literata, en A4 avec des marges de 2,5 cm,
+// la police elle-même pour le PDF, et Courier Prime pour la couverture et le
+// PDF d'un scénario.
 const RESOURCES: [(&str, &[u8]); 10] = [
     ("reference.docx", include_bytes!("../resources/reference.docx")),
     ("reference.odt", include_bytes!("../resources/reference.odt")),
@@ -133,35 +134,30 @@ fn insert_after(xml: &str, after: &str, anchor: &str, text: &str) -> Result<Stri
     Ok(format!("{}{}{}", &xml[..at], text, &xml[at..]))
 }
 
-/// Le corps du modèle Word, avec une feuille A4 et ses marges.
+/// Remplace la valeur d'un attribut, dans la balise qui commence à `from`.
+fn set_attribute(xml: &mut String, from: usize, name: &str, value: &str) -> Result<(), String> {
+    let missing = || format!("Modèle de document inattendu : « {name} » est introuvable.");
+    let end = xml[from..].find('>').ok_or_else(missing)? + from;
+    let start = xml[from..end].find(&format!("{name}=\"")).ok_or_else(missing)? + from + name.len() + 2;
+    let stop = xml[start..].find('"').ok_or_else(missing)? + start;
+    xml.replace_range(start..stop, value);
+    Ok(())
+}
+
+/// Le corps du modèle Word, avec les marges : la feuille est déjà en A4.
 fn docx_document(xml: &str, layout: Layout) -> Result<String, String> {
-    if !xml.contains("<w:sectPr />") {
-        return Err("Modèle Word inattendu : la section est introuvable.".to_string());
+    let mut xml = xml.to_string();
+    let margins = xml.find("<w:pgMar ").ok_or("Modèle Word inattendu : les marges sont introuvables.")?;
+    for (name, cm) in [("w:top", layout.top), ("w:right", layout.right), ("w:bottom", layout.bottom), ("w:left", layout.left)] {
+        set_attribute(&mut xml, margins, name, &twips(cm).to_string())?;
     }
-    let section = format!(
-        r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="708" w:footer="708" w:gutter="0" /></w:sectPr>"#,
-        twips(layout.top),
-        twips(layout.right),
-        twips(layout.bottom),
-        twips(layout.left)
-    );
-    Ok(xml.replacen("<w:sectPr />", &section, 1))
+    Ok(xml)
 }
 
 /// Les styles du modèle Word, avec l'interligne : 240 pour une ligne.
 fn docx_styles(xml: &str, layout: Layout) -> Result<String, String> {
     let line = (layout.spacing * 240.0).round() as i64;
     insert_after(xml, "<w:pPrDefault>", "<w:spacing ", &format!(r#"w:line="{line}" w:lineRule="auto" "#))
-}
-
-/// Remplace la valeur d'un attribut, dans la balise qui commence à `from`.
-fn set_attribute(xml: &mut String, from: usize, name: &str, value: &str) -> Result<(), String> {
-    let missing = || format!("Modèle OpenDocument inattendu : « {name} » est introuvable.");
-    let end = xml[from..].find('>').ok_or_else(missing)? + from;
-    let start = xml[from..end].find(&format!("{name}=\"")).ok_or_else(missing)? + from + name.len() + 2;
-    let stop = xml[start..].find('"').ok_or_else(missing)? + start;
-    xml.replace_range(start..stop, value);
-    Ok(())
 }
 
 /// Les styles du modèle OpenDocument, avec une feuille A4, ses marges et
@@ -996,7 +992,6 @@ mod tests {
         let document = docx_document(&entry(resource("reference.docx"), "word/document.xml"), LAYOUT).unwrap();
         // 2 cm font 1 134 vingtièmes de point.
         assert!(document.contains(r#"<w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="1134" w:right="680" w:bottom="1701" w:left="1417" "#));
-        assert!(!document.contains("<w:sectPr />"));
         let styles = docx_styles(&entry(resource("reference.docx"), "word/styles.xml"), LAYOUT).unwrap();
         assert!(styles.contains(r#"<w:spacing w:line="360" w:lineRule="auto" w:after="200" />"#));
     }
@@ -1017,6 +1012,24 @@ mod tests {
         }
         // Les marges du pied de page, plus loin dans le modèle, ne changent pas.
         assert!(styles.contains(r#"fo:margin-left="0in" fo:margin-right="0in""#));
+    }
+
+    #[test]
+    fn modeles_word_et_opendocument_sont_en_a4_avec_des_marges_de_2_5_cm() {
+        // 2,5 cm font 1 417 vingtièmes de point.
+        assert!(entry(resource("reference.docx"), "word/document.xml")
+            .contains(r#"<w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417" "#));
+        let styles = entry(resource("reference.odt"), "styles.xml");
+        for attribute in [
+            r#"fo:page-width="21cm""#,
+            r#"fo:page-height="29.7cm""#,
+            r#"fo:margin-top="2.5cm""#,
+            r#"fo:margin-bottom="2.5cm""#,
+            r#"fo:margin-left="2.5cm""#,
+            r#"fo:margin-right="2.5cm""#,
+        ] {
+            assert!(styles.contains(attribute), "{attribute}");
+        }
     }
 
     #[test]
