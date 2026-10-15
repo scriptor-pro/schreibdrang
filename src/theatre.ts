@@ -62,9 +62,12 @@ export function classifyPlay(lines: string[]): PlayLine[] {
 }
 
 // Un titre d'acte ou de scène numéroté : le mot, tel qu'il est écrit, puis le
-// numéro, en chiffres arabes ou romains. Le reste du titre est gardé.
-const NUMBERED_ACT = /^(#[ \t]+)(ACTE|Acte|acte)([ \t]+)([IVXLCDM]+|\d+)(?![\p{L}\p{N}])/u;
-const NUMBERED_SCENE = /^(##[ \t]+)(SCÈNE|Scène|scène|SCENE|Scene|scene)([ \t]+)([IVXLCDM]+|\d+)(?![\p{L}\p{N}])/u;
+// numéro, en chiffres arabes ou romains, ou « premier », « première » selon
+// la numérotation classique. Le reste du titre est gardé.
+const NUMERAL = "([IVXLCDM]+|\\d+|PREMIER|PREMIÈRE|Premier|Première|premier|première)";
+const NUMBERED_ACT = new RegExp(`^(#[ \\t]+)(ACTE|Acte|acte)([ \\t]+)${NUMERAL}(?![\\p{L}\\p{N}])`, "u");
+const NUMBERED_SCENE = new RegExp(`^(##[ \\t]+)(SCÈNE|Scène|scène|SCENE|Scene|scene)([ \\t]+)${NUMERAL}(?![\\p{L}\\p{N}])`, "u");
+const FIRST = /^premi(er|ère)$/iu;
 
 const ROMAN: [number, string][] = [
   [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
@@ -95,8 +98,13 @@ export interface TextChange {
 // pourtant la numérotation des scènes.
 export function renumberChanges(text: string): TextChange[] {
   const lines = text.split("\n");
-  const firstScene = lines.map((line) => NUMBERED_SCENE.exec(line)).find((match) => match !== null);
-  const romanScenes = firstScene !== undefined && firstScene !== null && !/^\d+$/.test(firstScene[4]);
+  const numerals = (pattern: RegExp) => lines.map((line) => pattern.exec(line)?.[4]).filter((numeral) => numeral !== undefined);
+  // Les scènes en chiffres romains si la première scène numérotée en
+  // chiffres l'est ; « premier », « première » reste au rang 1 s'il est employé.
+  const firstFigure = numerals(NUMBERED_SCENE).find((numeral) => !FIRST.test(numeral));
+  const romanScenes = firstFigure !== undefined && !/^\d+$/.test(firstFigure);
+  const firstAct = numerals(NUMBERED_ACT).find((numeral) => FIRST.test(numeral));
+  const firstScene = numerals(NUMBERED_SCENE).find((numeral) => FIRST.test(numeral));
   const changes: TextChange[] = [];
   let offset = 0;
   let act = 0;
@@ -112,12 +120,12 @@ export function renumberChanges(text: string): TextChange[] {
     if (numberedAct) {
       act += 1;
       scene = 0;
-      renumber(numberedAct, toRoman(act));
+      renumber(numberedAct, act === 1 && firstAct ? firstAct : toRoman(act));
     } else if (ACT.test(line)) {
       scene = 0;
     } else if (numberedScene) {
       scene += 1;
-      renumber(numberedScene, romanScenes ? toRoman(scene) : String(scene));
+      renumber(numberedScene, scene === 1 && firstScene ? firstScene : romanScenes ? toRoman(scene) : String(scene));
     }
     offset += line.length + 1;
   }
@@ -228,10 +236,10 @@ export function playPosition(lines: readonly string[], kinds: readonly PlayLine[
   const place = placeOf(kinds, index);
   if (place.cast >= 0) return "Personnages";
   const numberedAct = place.act >= 0 ? NUMBERED_ACT.exec(lines[place.act]) : null;
-  const act = place.act < 0 ? "" : numberedAct ? `Acte ${numberedAct[4]}` : strip(lines[place.act]);
+  const act = place.act < 0 ? "" : numberedAct ? `Acte ${FIRST.test(numberedAct[4]) ? "I" : numberedAct[4]}` : strip(lines[place.act]);
   if (place.scene < 0) return act;
   const numberedScene = NUMBERED_SCENE.exec(lines[place.scene]);
-  const scene = numberedScene ? numberedScene[4] : String(place.rank);
+  const scene = numberedScene ? (FIRST.test(numberedScene[4]) ? "1" : numberedScene[4]) : String(place.rank);
   return act ? `${act}, scène ${scene}` : `Scène ${scene}`;
 }
 

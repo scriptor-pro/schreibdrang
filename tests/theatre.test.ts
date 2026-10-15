@@ -143,3 +143,13 @@ test("les noms des personnages, ceux qui parlent et ceux de la liste", () => {
   const text = "PERSONNAGES\n\nJEAN-PIERRE, son oncle.\nla Mère, une voisine.\n\n# ACTE I\n\n## Scène 1\n\nMARIE (à part)\nEnfin.\n";
   assert.deepEqual(playCharacterNames(text), new Set(["JEAN-PIERRE", "JEAN", "PIERRE", "MARIE"]));
 });
+
+test("la numérotation classique « ACTE PREMIER », « SCÈNE PREMIÈRE » est comprise et gardée", () => {
+  const classic = "# ACTE PREMIER\n\n## SCÈNE PREMIÈRE\n\n## SCÈNE II\n\n## SCÈNE III\n\n# ACTE II\n\n## SCÈNE PREMIÈRE\n";
+  assert.equal(renumberPlay(classic), classic);
+  // Après un déplacement, la première scène redevient « PREMIÈRE ».
+  assert.equal(renumberPlay("# ACTE PREMIER\n\n## SCÈNE II\n\n## SCÈNE PREMIÈRE\n"), "# ACTE PREMIER\n\n## SCÈNE PREMIÈRE\n\n## SCÈNE II\n");
+  assert.equal(renumberPlay("# Acte premier\n\n## Scène 2\n\n## Scène première\n"), "# Acte premier\n\n## Scène première\n\n## Scène 2\n");
+  const lines = ["# ACTE PREMIER", "", "## SCÈNE PREMIÈRE", "Texte."];
+  assert.equal(playPosition(lines, classifyPlay(lines), 3), "Acte I, scène 1");
+});

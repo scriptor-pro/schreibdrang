@@ -16,7 +16,8 @@ test("manuscrit : chaque élément dans son style, titres en capitales, didascal
       block("Scene", "SCÈNE 1"),
       block("Didascalie", "(Un salon.)"),
       block("Personnage", "CLAIRE"),
-      block("Replique", "Tu rentres\ntard."),
+      // Chaque ligne d'une réplique garde sa place : un vers reste un vers.
+      block("Replique", "Tu rentres\\\ntard."),
       block("Didascalie", "(Elle rit.)"),
       block("Replique", "Enfin."),
     ].join("\n\n") + "\n",
@@ -33,7 +34,7 @@ test("édition : titres tels qu'écrits, didascalies sans parenthèses", () => {
 
 test("une réplique qui ressemble à du Markdown reste une réplique", () => {
   const text = "# ACTE I\n\n## Scène 1\n\nCLAIRE\n- Non.\n1. Oui.\n";
-  assert.ok(playToPandoc(text, "manuscrit").includes(block("Replique", "\\- Non.\n1\\. Oui.")));
+  assert.ok(playToPandoc(text, "manuscrit").includes(block("Replique", "\\- Non.\\\n1\\. Oui.")));
 });
 
 test("un texte que rien ne reconnaît garde son style", () => {
@@ -45,4 +46,8 @@ test("les styles nommés et les modèles", () => {
   assert.equal(playModel("manuscrit", "a5"), "manuscrit");
   assert.equal(playModel("edition", "a4"), "edition-a4");
   assert.equal(playModel("edition", "a5"), "edition-a5");
+});
+
+test("un paragraphe de texte que rien ne reconnaît reste d'un seul tenant", () => {
+  assert.ok(playToPandoc("Une note\nsur deux lignes.\n\n# ACTE I\n", "edition").startsWith(block("Texte", "Une note\nsur deux lignes.")));
 });

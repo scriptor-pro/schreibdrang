@@ -50,3 +50,10 @@ export function savePlayExports(exports: PlayExports) {
     // Stockage plein ou indisponible : le choix reste valable pour la session.
   }
 }
+
+// Comment s'exporte une pièce dans ce format : selon sa mise en page (PDF,
+// Word, OpenDocument), ou telle quelle (Markdown, texte brut), sans que
+// Pandoc ne recolle les noms à leurs répliques.
+export function playExportKind(format: string): "layout" | "raw" {
+  return format === "pdf" || format === "docx" || format === "odt" ? "layout" : "raw";
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_PLAY_EXPORT, knownPlayExport, normalizePlayExports, withPlayExport } from "../src/theatre-exports.ts";
+import { DEFAULT_PLAY_EXPORT, knownPlayExport, normalizePlayExports, playExportKind, withPlayExport } from "../src/theatre-exports.ts";
 
 test("par défaut, le manuscrit et l'A4", () => {
   assert.deepEqual(DEFAULT_PLAY_EXPORT, { layout: "manuscrit", page: "a4" });
@@ -21,4 +21,8 @@ test("des données illisibles donnent une liste vide, une entrée invalide est �
     normalizePlayExports({ "/a.md": { layout: "edition", page: "a5" }, "/b.md": { layout: "poster", page: "a4" }, "/c.md": { layout: "manuscrit", page: "a3" }, "": {} }),
     { "/a.md": { layout: "edition", page: "a5" } },
   );
+});
+
+test("PDF, Word et OpenDocument suivent la mise en page ; Markdown et texte brut gardent la pièce telle quelle", () => {
+  assert.deepEqual(["pdf", "docx", "odt", "md", "txt"].map(playExportKind), ["layout", "layout", "layout", "raw", "raw"]);
 });

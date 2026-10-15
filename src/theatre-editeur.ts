@@ -4,11 +4,12 @@
 
 import { Prec, RangeSetBuilder } from "@codemirror/state";
 import type { Extension, TransactionSpec } from "@codemirror/state";
+import { markdown } from "@codemirror/lang-markdown";
 import { Decoration, EditorView, ViewPlugin, keymap, showPanel } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
-import { bannerAt } from "./theatre";
-import type { PlayLine } from "./theatre";
-import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playShiftEnter, playTab, setPlayEntry } from "./theatre-saisie";
+import { bannerAt } from "./theatre.ts";
+import type { PlayLine } from "./theatre.ts";
+import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playShiftEnter, playTab, setPlayEntry } from "./theatre-saisie.ts";
 
 const PLAY_LINES: Partial<Record<PlayLine, Decoration>> = {
   "cast-title": Decoration.line({ class: "cm-play-cast-title" }),
@@ -118,6 +119,13 @@ const banner = showPanel.of((view) => {
     },
   };
 });
+
+// Le Markdown d'une pièce, pour l'italique et le gras, sans ses raccourcis :
+// Entrée dans une réplique qui commence par « - » ou « 1. » ne doit pas
+// prolonger une liste.
+export function playLanguage(): Extension {
+  return markdown({ addKeymap: false });
+}
 
 export function theatreExtension(): Extension {
   return [playKinds, playEntry, playLines, playTheme, playKeys, playInputHandler, banner];

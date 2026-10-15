@@ -52,10 +52,10 @@ import { apostropheChanges, apostrophesMessage, typographicApostrophes } from ".
 import { frenchSpacing } from "./espaces";
 import { ordinalChanges, ordinalsMessage } from "./ordinaux";
 import { NEW_PLAY, classifyPlay, parsePlay, playPosition, renumberChanges, renumberMessage, renumberPlay, sceneOffset } from "./theatre";
-import { theatreExtension } from "./theatre-editeur";
+import { playLanguage, theatreExtension } from "./theatre-editeur";
 import { playModel, playToPandoc } from "./theatre-pandoc";
 import type { PlayLayout, PlayPage } from "./theatre-pandoc";
-import { knownPlayExport, loadPlayExports, savePlayExports, withPlayExport } from "./theatre-exports";
+import { knownPlayExport, loadPlayExports, playExportKind, savePlayExports, withPlayExport } from "./theatre-exports";
 import {
   emptyTextData,
   knownTextData,
@@ -1071,7 +1071,7 @@ function createState(doc: string): EditorState {
       // sont du Markdown.
       currentFormat === "scenario"
         ? [consignesInMargin, screenplayLayout, consignesLayer, consignesPlace, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, pageBreakTheme, dialogueKeys, dialogueInput]
-        : [markdown(), syntaxHighlighting(textHighlight)],
+        : [currentFormat === "theatre" ? playLanguage() : markdown(), syntaxHighlighting(textHighlight)],
       // Une pièce : mise en forme de chaque ligne, saisie guidée, bandeau.
       currentFormat === "theatre" ? theatreExtension() : [],
       // Un texte vanilla se compte en feuillets, sur une feuille à sa mise en page.
@@ -1871,8 +1871,6 @@ function chosenPlayExport(): { layout: PlayLayout; page: PlayPage } {
   return { layout: data.get("play-layout") === "edition" ? "edition" : "manuscrit", page: data.get("play-page") === "a5" ? "a5" : "a4" };
 }
 
-// Formats d'une pièce qui suivent sa mise en page.
-const PLAY_FORMATS = new Set(["pdf", "docx", "odt"]);
 
 btnExport.addEventListener("click", () => {
   // Un scénario s'exporte en PDF et en Fountain ; les autres formats de
@@ -1958,7 +1956,7 @@ exportDialog.addEventListener("close", async () => {
   setStatus(`Export ${FORMATS[format]} en cours…`);
   const start = performance.now();
   try {
-    if (currentFormat === "theatre" && PLAY_FORMATS.has(format)) {
+    if (currentFormat === "theatre" && playExportKind(format) === "layout") {
       const choice = chosenPlayExport();
       if (currentPath) {
         playExports = withPlayExport(playExports, currentPath, choice);
@@ -1974,9 +1972,11 @@ exportDialog.addEventListener("close", async () => {
       return;
     }
     const fountain = format === "fountain" ? fountainExport() : undefined;
-    // Un texte vanilla s'exporte avec son interligne et ses marges.
+    // Un texte vanilla s'exporte avec son interligne et ses marges. Une pièce
+    // en texte brut est écrite telle quelle, comme en Markdown.
     const layout = currentFormat === "vanilla" ? currentSetup : null;
-    await invoke("export_document", { path, format, markdown: fountain?.text ?? view.state.doc.toString(), layout });
+    const route = currentFormat === "theatre" ? "md" : format;
+    await invoke("export_document", { path, format: route, markdown: fountain?.text ?? view.state.doc.toString(), layout });
     const seconds = ((performance.now() - start) / 1000).toFixed(1);
     setStatus(
       fountain && !fountain.titled

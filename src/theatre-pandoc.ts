@@ -60,7 +60,11 @@ export function playToPandoc(text: string, layout: PlayLayout): string {
   const blocks: string[] = [];
   let group: { style: string; lines: string[] } | undefined;
   const flush = () => {
-    if (group) blocks.push(`::: {custom-style="${group.style}"}\n${group.lines.map(escapeLine).join("\n")}\n:::`);
+    // Les lignes d'une réplique sont séparées par un saut de ligne forcé (« \ »
+    // en fin de ligne) : un vers reste un vers. Celles d'un paragraphe de texte
+    // se suivent, comme dans un roman.
+    const separator = group?.style === "Replique" ? "\\\n" : "\n";
+    if (group) blocks.push(`::: {custom-style="${group.style}"}\n${group.lines.map(escapeLine).join(separator)}\n:::`);
     group = undefined;
   };
   lines.forEach((line, index) => {
