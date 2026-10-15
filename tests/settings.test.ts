@@ -9,7 +9,19 @@ test("des données absentes ou illisibles donnent les valeurs par défaut", () =
 });
 
 test("des réglages valides sont conservés", () => {
-  const settings = { theme: "sombre", font: "DejaVu Sans Mono", size: 20, startup: "dernier", nbsp: false, consignes: false };
+  const settings = {
+    theme: "sombre",
+    font: "DejaVu Sans Mono",
+    size: 20,
+    startup: "dernier",
+    nbsp: false,
+    consignes: false,
+    checkWhileTyping: true,
+    grammar: false,
+    spelling: true,
+    typography: false,
+    reference: "reforme",
+  };
   assert.deepEqual(normalizeSettings(settings), settings);
 });
 
@@ -36,4 +48,21 @@ test("les consignes sont affichées par défaut, et se masquent", () => {
   assert.equal(normalizeSettings({}).consignes, true);
   assert.equal(normalizeSettings({ consignes: "non" }).consignes, true);
   assert.equal(normalizeSettings({ consignes: false }).consignes, false);
+});
+
+test("correction : vérification à la demande, trois sortes cochées, toutes variantes, par défaut", () => {
+  const got = normalizeSettings({});
+  assert.equal(got.checkWhileTyping, false);
+  assert.equal(got.grammar, true);
+  assert.equal(got.spelling, true);
+  assert.equal(got.typography, true);
+  assert.equal(got.reference, "toutes");
+});
+
+test("correction : une valeur invalide donne son défaut", () => {
+  const got = normalizeSettings({ checkWhileTyping: "oui", grammar: 0, reference: "ancienne" });
+  assert.equal(got.checkWhileTyping, false);
+  assert.equal(got.grammar, true);
+  assert.equal(got.reference, "toutes");
+  assert.equal(normalizeSettings({ reference: "classique" }).reference, "classique");
 });
