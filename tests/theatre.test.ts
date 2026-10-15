@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NEW_PLAY, bannerAt, classifyPlay, parsePlay, playCharacterNames, playPosition, renumberChanges, renumberMessage, renumberPlay, sceneOffset, toRoman } from "../src/theatre.ts";
+import { NEW_PLAY, bannerAt, classifyPlay, parsePlay, playCharacterNames, playPosition, renumberChanges, renumberMessage, renumberOutline, renumberPlay, sceneOffset, toRoman } from "../src/theatre.ts";
 import { serializeDocument } from "../src/outline.ts";
 
 export const PLAY = [
@@ -152,4 +152,27 @@ test("la numérotation classique « ACTE PREMIER », « SCÈNE PREMIÈRE » est 
   assert.equal(renumberPlay("# Acte premier\n\n## Scène 2\n\n## Scène première\n"), "# Acte premier\n\n## Scène première\n\n## Scène 2\n");
   const lines = ["# ACTE PREMIER", "", "## SCÈNE PREMIÈRE", "Texte."];
   assert.equal(playPosition(lines, classifyPlay(lines), 3), "Acte I, scène 1");
+});
+
+test("renuméroter le plan du cork board met à jour les titres des fiches déplacées", () => {
+  const outline = parsePlay("# ACTE I\n\n## Scène 1\n\nA\n\n## Scène 2 — Théo\n\nB\n\n# ACTE II\n\n## Scène 1\n\nC\n");
+  const [first, second] = outline.chapters;
+  const moved = first.scenes.shift()!;
+  second.scenes.push(moved);
+  renumberOutline(outline);
+  assert.deepEqual(
+    outline.chapters.map((chapter) => [chapter.heading, ...chapter.scenes.map((scene) => scene.heading)]),
+    [
+      ["# ACTE I", "## Scène 1 — Théo"],
+      ["# ACTE II", "## Scène 1", "## Scène 2"],
+    ],
+  );
+  assert.equal(moved.heading, "## Scène 2");
+});
+
+test("renuméroter le plan suit aussi les actes déplacés", () => {
+  const outline = parsePlay("# ACTE I\n\n## Scène 1\n\nA\n\n# ACTE II — Le retour\n\n## Scène 1\n\nB\n");
+  outline.chapters.reverse();
+  renumberOutline(outline);
+  assert.deepEqual(outline.chapters.map((chapter) => chapter.heading), ["# ACTE I — Le retour", "# ACTE II"]);
 });

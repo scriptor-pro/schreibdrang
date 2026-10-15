@@ -46,6 +46,19 @@ export const playEntry = StateField.define<PlayEntry>({
 const blankAbove = (state: EditorState, lineNumber: number) =>
   lineNumber === 1 || state.doc.line(lineNumber - 1).text.trim() === "";
 
+// La nature d'une ligne telle que l'éditeur la montre : pendant la saisie, le
+// nom tapé, puis le nom au-dessus de la réplique qu'on vient d'ouvrir, sont
+// déjà des noms, avant même la première lettre de la réplique.
+export function playLineKind(state: EditorState, lineNumber: number): PlayLine {
+  const line = state.doc.line(lineNumber);
+  const entry = state.field(playEntry);
+  if (line.from === entry.character) return "character";
+  const kind = state.field(playKinds)[lineNumber - 1];
+  const opensReply = entry.dialogue !== null && line.to + 1 === entry.dialogue;
+  if (opensReply && kind !== "stage" && blankAbove(state, lineNumber) && couldBeCharacter(line.text)) return "character";
+  return kind;
+}
+
 // Tab : la ligne en cours devient un nom de personnage, en capitales,
 // précédé d'une ligne vide.
 export function playTab(state: EditorState): TransactionSpec {

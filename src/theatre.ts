@@ -4,6 +4,7 @@
 // pour le cork board et dit où se trouve une ligne. Il n'accède pas à la page.
 
 import { couldBeCharacter } from "./fountain.ts";
+import { serializeDocument } from "./outline.ts";
 import type { Chapter, Outline, Scene } from "./outline.ts";
 
 export type PlayLine =
@@ -182,6 +183,17 @@ export function parsePlay(text: string): Outline {
   }
   flush();
   return outline;
+}
+
+// Renumérote le plan du cork board lui-même, après un déplacement : chaque
+// acte et chaque scène reçoit le titre qu'il a dans la pièce renumérotée,
+// dans l'ordre, pour que les fiches affichent les nouveaux numéros.
+export function renumberOutline(outline: Outline): void {
+  const fresh = parsePlay(renumberPlay(serializeDocument(outline))).chapters;
+  const acts = fresh.filter((chapter) => chapter.heading);
+  const scenes = fresh.flatMap((chapter) => chapter.scenes);
+  for (const chapter of outline.chapters) if (chapter.heading) chapter.heading = acts.shift()?.heading ?? chapter.heading;
+  for (const scene of outline.chapters.flatMap((chapter) => chapter.scenes)) scene.heading = scenes.shift()?.heading ?? scene.heading;
 }
 
 // La place dans le texte du titre de la scène de ce rang (0 pour la

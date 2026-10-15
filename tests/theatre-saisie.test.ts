@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EditorState } from "@codemirror/state";
 import type { TransactionSpec } from "@codemirror/state";
-import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playShiftEnter, playTab } from "../src/theatre-saisie.ts";
+import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playLineKind, playShiftEnter, playTab } from "../src/theatre-saisie.ts";
 
 function stateAt(doc: string, anchor = doc.length) {
   return EditorState.create({ doc, selection: { anchor }, extensions: [playKinds, playEntry] });
@@ -37,6 +37,18 @@ test("Entrée après le nom ouvre la réplique", () => {
   const next = apply(state, playEnter(state));
   assert.equal(next.doc.toString(), HEAD + "CLAIRE\n");
   assert.equal(next.field(playEntry).dialogue, next.doc.length);
+});
+
+test("le nom reste un nom (centré) dès Entrée, avant la première lettre de la réplique", () => {
+  const state = stateAt(HEAD + "CLAIRE");
+  const next = apply(state, playEnter(state));
+  assert.equal(playLineKind(next, next.doc.lineAt(HEAD.length).number), "character");
+});
+
+test("Entrée ailleurs n'en fait pas un nom", () => {
+  const state = stateAt(HEAD + "CLAIRE");
+  const next = state.update({ changes: { from: state.doc.length, insert: "\n" } }).state;
+  assert.notEqual(playLineKind(next, next.doc.lineAt(HEAD.length).number), "character");
 });
 
 test("Entrée à la fin d'une réplique la termine, par une ligne vide", () => {

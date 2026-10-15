@@ -51,7 +51,7 @@ import { isProgress } from "./correction/verification";
 import { apostropheChanges, apostrophesMessage, typographicApostrophes } from "./apostrophe";
 import { frenchSpacing } from "./espaces";
 import { ordinalChanges, ordinalsMessage } from "./ordinaux";
-import { NEW_PLAY, classifyPlay, parsePlay, playPosition, renumberChanges, renumberMessage, renumberPlay, sceneOffset } from "./theatre";
+import { NEW_PLAY, classifyPlay, parsePlay, playPosition, renumberChanges, renumberMessage, renumberOutline, sceneOffset } from "./theatre";
 import { playLanguage, theatreExtension } from "./theatre-editeur";
 import { playModel, playToPandoc } from "./theatre-pandoc";
 import type { PlayLayout, PlayPage } from "./theatre-pandoc";
@@ -1234,9 +1234,16 @@ function applyBoardOrder(moved?: Element) {
     chapter.scenes = [...column.querySelectorAll(".card")].map((card) => sceneOf.get(card)!);
     chapters.push(chapter);
   }
-  const serialized = serializeDocument({ preamble: boardPreamble, chapters });
-  // Une pièce est renumérotée après chaque déplacement.
-  const text = currentFormat === "theatre" ? renumberPlay(serialized) : serialized;
+  // Une pièce est renumérotée après chaque déplacement, fiches comprises.
+  if (currentFormat === "theatre") {
+    renumberOutline({ preamble: boardPreamble, chapters });
+    for (const column of board.querySelectorAll(".chapter")) {
+      const chapter = chapterOf.get(column)!;
+      if (chapter.heading) column.querySelector("h2")!.textContent = chapter.heading.replace(/^#\s*/, "");
+      for (const card of column.querySelectorAll(".card")) card.querySelector("h3")!.textContent = sceneOf.get(card)!.heading.replace(/^##?\s*/, "");
+    }
+  }
+  const text = serializeDocument({ preamble: boardPreamble, chapters });
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
   const scene = moved && sceneOf.get(moved);
   if (scene && currentFormat === "theatre") {

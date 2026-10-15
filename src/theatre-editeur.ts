@@ -9,7 +9,7 @@ import { Decoration, EditorView, ViewPlugin, keymap, showPanel } from "@codemirr
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { bannerAt } from "./theatre.ts";
 import type { PlayLine } from "./theatre.ts";
-import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playShiftEnter, playTab, setPlayEntry } from "./theatre-saisie.ts";
+import { NO_PLAY_ENTRY, playEnter, playEntry, playInput, playKinds, playLineKind, playShiftEnter, playTab, setPlayEntry } from "./theatre-saisie.ts";
 
 const PLAY_LINES: Partial<Record<PlayLine, Decoration>> = {
   "cast-title": Decoration.line({ class: "cm-play-cast-title" }),
@@ -30,15 +30,12 @@ const playLines = ViewPlugin.fromClass(
       if (update.docChanged || update.viewportChanged || entryChanged) this.decorations = this.build(update.view);
     }
     build(view: EditorView): DecorationSet {
-      const kinds = view.state.field(playKinds);
-      const entry = view.state.field(playEntry);
       const builder = new RangeSetBuilder<Decoration>();
       for (const { from, to } of view.visibleRanges) {
         for (let pos = from; pos <= to; ) {
           const line = view.state.doc.lineAt(pos);
           // Pendant la saisie, le nom tapé a déjà sa mise en page.
-          const kind = line.from === entry.character ? "character" : kinds[line.number - 1];
-          const decoration = PLAY_LINES[kind];
+          const decoration = PLAY_LINES[playLineKind(view.state, line.number)];
           if (decoration) builder.add(line.from, line.from, decoration);
           pos = line.to + 1;
         }
@@ -95,16 +92,20 @@ const banner = showPanel.of((view) => {
   dom.className = "cm-play-banner";
   let cachedDoc = view.state.doc;
   let lines = cachedDoc.toJSON();
-  const refresh = () => {
-    if (view.state.doc !== cachedDoc) {
-      cachedDoc = view.state.doc;
-      lines = cachedDoc.toJSON();
-    }
-    const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
-    const top = view.state.doc.lineAt(block.from).number - 1;
-    const { title, heading } = bannerAt(lines, view.state.field(playKinds), top);
-    dom.textContent = title && heading < top ? title : "";
+  // La mise en page ne se lit pas pendant une mise à jour de l'éditeur :
+  // le bandeau est recalculé à la prochaine mesure.
+  const measure = {
+    read: () => view.state.doc.lineAt(view.lineBlockAtHeight(view.scrollDOM.scrollTop).from).number - 1,
+    write: (top: number) => {
+      if (view.state.doc !== cachedDoc) {
+        cachedDoc = view.state.doc;
+        lines = cachedDoc.toJSON();
+      }
+      const { title, heading } = bannerAt(lines, view.state.field(playKinds), top);
+      dom.textContent = title && heading < top ? title : "";
+    },
   };
+  const refresh = () => view.requestMeasure(measure);
   const onScroll = () => refresh();
   view.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
   refresh();
