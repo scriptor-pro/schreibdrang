@@ -50,6 +50,7 @@ import { Engine } from "./correction/moteur";
 import { isProgress } from "./correction/verification";
 import { apostropheChanges, apostrophesMessage, typographicApostrophes } from "./apostrophe";
 import { frenchSpacing } from "./espaces";
+import { ordinalChanges, ordinalsMessage } from "./ordinaux";
 import {
   emptyTextData,
   knownTextData,
@@ -997,6 +998,7 @@ const CORRECTION_ITEMS = [
   "correction-previous",
   "correction-clear",
   "correction-apostrophes",
+  "correction-ordinals",
   "correction-typing",
   "correction-dictionaries",
 ];
@@ -2350,6 +2352,14 @@ function useTypographicApostrophes() {
   setStatus(apostrophesMessage(changes.length));
 }
 
+// Correction > Mettre en forme les nombres ordinaux : « 1er », « XIXe »
+// deviennent « 1ᵉʳ », « XIXᵉ », en une seule modification que Ctrl+Z annule.
+function formatOrdinals() {
+  const changes = ordinalChanges(view.state.doc.toString());
+  if (changes.length) view.dispatch({ changes, userEvent: "input.replace.all" });
+  setStatus(ordinalsMessage(changes.length));
+}
+
 function goToNextRemark(direction: 1 | -1) {
   if (!goToRemark(view, direction)) setCorrectionStatus("Aucune remarque affichée : lance d'abord la vérification (F7).");
 }
@@ -2580,6 +2590,7 @@ const ACTIONS: Record<string, () => void> = {
   "correction-previous": () => goToNextRemark(-1),
   "correction-clear": () => corrector.clear(),
   "correction-apostrophes": useTypographicApostrophes,
+  "correction-ordinals": formatOrdinals,
   "correction-typing": toggleCheckWhileTyping,
   "correction-dictionaries": openDictionaries,
   "scenario-cover": openCover,

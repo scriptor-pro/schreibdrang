@@ -238,8 +238,8 @@ fn export(path: &Path, format: &str, markdown: &str, layout: Option<Layout>) -> 
             path,
             &["--to=plain".into(), "--wrap=none".into()],
         ),
-        "docx" => run_pandoc(markdown, path, &[reference("reference.docx")?]),
-        "odt" => run_pandoc(markdown, path, &[reference("reference.odt")?]),
+        "docx" => run_pandoc(&with_superscripts(markdown), path, &[reference("reference.docx")?]),
+        "odt" => run_pandoc(&with_superscripts(markdown), path, &[reference("reference.odt")?]),
         "pdf" => {
             let mut variables = vec![
                 "documentclass=report".to_string(),
@@ -261,7 +261,7 @@ fn export(path: &Path, format: &str, markdown: &str, layout: Option<Layout>) -> 
                 args.push("--variable".to_string());
                 args.push(variable);
             }
-            run_pandoc(markdown, path, &args)
+            run_pandoc(&with_superscripts(markdown), path, &args)
         }
         "epub" => {
             // Un EPUB exige un titre : c'est le nom du fichier exporté. Chaque
@@ -271,7 +271,7 @@ fn export(path: &Path, format: &str, markdown: &str, layout: Option<Layout>) -> 
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Sans titre".to_string());
             run_pandoc(
-                markdown,
+                &with_superscripts(markdown),
                 path,
                 &[
                     "--to=epub3".to_string(),
@@ -368,10 +368,54 @@ fn join_names(names: &[String]) -> String {
 }
 
 /// Rend un texte saisi inoffensif pour LaTeX : il est composé tel quel.
+/// La lettre ordinaire d'une lettre en exposant d'Unicode, celles des
+/// nombres ordinaux (« 1ᵉʳ », « XIXᵉ », « 2ᵈᵉ ») : les polices embarquées ne
+/// les ont pas, les exports en font un véritable exposant.
+fn superscript_letter(character: char) -> Option<char> {
+    match character {
+        'ᵉ' => Some('e'),
+        'ʳ' => Some('r'),
+        'ˢ' => Some('s'),
+        'ᵈ' => Some('d'),
+        _ => None,
+    }
+}
+
+/// Le texte où chaque suite de lettres en exposant est remplacée par
+/// `format(lettres)`.
+fn replace_superscripts(text: &str, format: impl Fn(&str) -> String) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut letters = String::new();
+    for character in text.chars() {
+        if let Some(letter) = superscript_letter(character) {
+            letters.push(letter);
+            continue;
+        }
+        if !letters.is_empty() {
+            result.push_str(&format(&letters));
+            letters.clear();
+        }
+        result.push(character);
+    }
+    if !letters.is_empty() {
+        result.push_str(&format(&letters));
+    }
+    result
+}
+
+/// Pour Pandoc : « 1ᵉʳ » devient « 1^er^ », un exposant de son Markdown.
+fn with_superscripts(markdown: &str) -> String {
+    replace_superscripts(markdown, |letters| format!("^{letters}^"))
+}
+
 fn latex_escape(text: &str) -> String {
+    let text = replace_superscripts(text, |letters| format!("\u{1}{letters}\u{2}"));
     let mut escaped = String::with_capacity(text.len());
     for character in text.chars() {
         match character {
+            // Bornes d'un exposant, posées ci-dessus.
+            '\u{1}' => escaped.push_str(r"\textsuperscript{"),
+            '\u{2}' => escaped.push('}'),
             '\\' => escaped.push_str(r"\textbackslash{}"),
             '~' => escaped.push_str(r"\textasciitilde{}"),
             '^' => escaped.push_str(r"\textasciicircum{}"),
@@ -747,6 +791,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&correction_item("correction-clear", "Effacer les remarques", None)?)
         .separator()
         .item(&correction_item("correction-apostrophes", "Utiliser l'apostrophe typographique", None)?)
+        .item(&correction_item("correction-ordinals", "Mettre en forme les nombres ordinaux", None)?)
         .separator()
         .item(&typing)
         .separator()
@@ -837,6 +882,21 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn les_ordinaux_deviennent_des_exposants_pour_pandoc() {
+        assert_eq!(
+            with_superscripts("Le 1ᵉʳ mai, au XIXᵉ siècle, les 2ᵈᵉˢ."),
+            "Le 1^er^ mai, au XIX^e^ siècle, les 2^des^."
+        );
+        assert_eq!(with_superscripts("Rien à changer : 2 ^ 3."), "Rien à changer : 2 ^ 3.");
+    }
+
+    #[test]
+    fn les_ordinaux_deviennent_des_exposants_pour_latex() {
+        assert_eq!(latex_escape("Le 1ᵉʳ mai"), "Le 1\\textsuperscript{er} mai");
+        assert_eq!(latex_escape("XIXᵉ"), "XIX\\textsuperscript{e}");
+    }
 
     fn author(name: &str, email: &str) -> Author {
         Author {
