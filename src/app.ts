@@ -49,6 +49,7 @@ import { Corrector } from "./correction/correcteur";
 import { Engine } from "./correction/moteur";
 import { isProgress } from "./correction/verification";
 import { typographicApostrophes } from "./apostrophe";
+import { frenchSpacing } from "./espaces";
 import {
   emptyTextData,
   knownTextData,
@@ -834,14 +835,19 @@ const dialogueKeys = Prec.high(
   ]),
 );
 
-// L'apostrophe droite tapée devient l'apostrophe typographique, si le réglage
-// le demande. Avant les autres saisies : « ’ » n'a pas de capitale, et le nom
-// d'un personnage la garde telle quelle.
-const apostropheInput = Prec.high(
+// Typographie à la frappe, selon les réglages : l'apostrophe droite devient
+// l'apostrophe typographique, et l'espace tapée devant ou après certains
+// signes devient insécable (voir espaces.ts). Avant les autres saisies :
+// « ’ » n'a pas de capitale, et le nom d'un personnage la garde telle quelle.
+const typographyInput = Prec.high(
   EditorView.inputHandler.of((view, from, to, text) => {
-    if (!settings.apostrophe || !text.includes("'")) return false;
-    const insert = typographicApostrophes(text);
-    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, userEvent: "input.type" });
+    const typed = settings.apostrophe ? typographicApostrophes(text) : text;
+    const line = view.state.doc.lineAt(from);
+    const spacing = settings.spaces && from === to ? frenchSpacing(line.text.slice(Math.max(0, from - line.from - 8), from - line.from), typed) : null;
+    if (!spacing && typed === text) return false;
+    const start = from - (spacing?.back ?? 0);
+    const insert = spacing?.insert ?? typed;
+    view.dispatch({ changes: { from: start, to, insert }, selection: { anchor: start + insert.length }, userEvent: "input.type" });
     return true;
   }),
 );
@@ -1132,7 +1138,7 @@ function createState(doc: string): EditorState {
         },
       }),
       nbspMarks.of(settings.nbsp ? showNbsp : []),
-      apostropheInput,
+      typographyInput,
       correctionExtension(correctionActions),
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
@@ -2180,6 +2186,7 @@ async function openSettings() {
     settingsForm.querySelector<HTMLInputElement>(`input[name="${name}"]`)!.checked = settings[name];
   }
   settingsForm.querySelector<HTMLInputElement>('input[name="apostrophe"]')!.checked = settings.apostrophe;
+  settingsForm.querySelector<HTMLInputElement>('input[name="spaces"]')!.checked = settings.spaces;
   renderIgnoredRules();
   sizeInput.value = String(settings.size);
   fillFontSelect([]);
@@ -2205,6 +2212,7 @@ settingsForm.addEventListener("change", () => {
     nbsp: settings.nbsp,
     consignes: settings.consignes,
     apostrophe: data.get("apostrophe") === "on",
+    spaces: data.get("spaces") === "on",
     checkWhileTyping: data.get("checkWhileTyping") === "on",
     grammar: data.get("grammar") === "on",
     spelling: data.get("spelling") === "on",

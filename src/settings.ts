@@ -25,6 +25,8 @@ export interface Settings {
   reference: Reference;
   // Vrai si l'apostrophe droite tapée devient l'apostrophe typographique.
   apostrophe: boolean;
+  // Vrai si les espaces insécables sont posées à la frappe (voir espaces.ts).
+  spaces: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -40,6 +42,7 @@ export const DEFAULTS: Settings = {
   typography: true,
   reference: "toutes",
   apostrophe: true,
+  spaces: true,
 };
 
 export const MIN_SIZE = 14;
@@ -66,7 +69,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const typography = flag(data.typography, DEFAULTS.typography);
   const reference = data.reference === "classique" || data.reference === "reforme" ? data.reference : DEFAULTS.reference;
   const apostrophe = flag(data.apostrophe, DEFAULTS.apostrophe);
-  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference, apostrophe };
+  const spaces = flag(data.spaces, DEFAULTS.spaces);
+  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference, apostrophe, spaces };
 }
 
 export function loadSettings(): Settings {

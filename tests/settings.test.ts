@@ -22,6 +22,7 @@ test("des réglages valides sont conservés", () => {
     typography: false,
     reference: "reforme",
     apostrophe: false,
+    spaces: false,
   };
   assert.deepEqual(normalizeSettings(settings), settings);
 });
@@ -72,4 +73,10 @@ test("l'apostrophe typographique est posée à la frappe par défaut", () => {
   assert.equal(normalizeSettings({}).apostrophe, true);
   assert.equal(normalizeSettings({ apostrophe: "non" }).apostrophe, true);
   assert.equal(normalizeSettings({ apostrophe: false }).apostrophe, false);
+});
+
+test("les espaces insécables sont posées à la frappe par défaut", () => {
+  assert.equal(normalizeSettings({}).spaces, true);
+  assert.equal(normalizeSettings({ spaces: 1 }).spaces, true);
+  assert.equal(normalizeSettings({ spaces: false }).spaces, false);
 });
