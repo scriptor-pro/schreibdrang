@@ -22,8 +22,15 @@ export function passagesIn(passages: Passage[], from: number, to: number): Passa
   return passages.filter((passage) => passage.to > from && passage.from < to);
 }
 
+const PROGRESS = "Vérification : ";
+
 export function progressMessage(done: number, total: number): string {
-  return `Vérification : ${total ? Math.floor((done * 100) / total) : 100} %`;
+  return `${PROGRESS}${total ? Math.floor((done * 100) / total) : 100} %`;
+}
+
+// Vrai pour le message d'avancement, que le pied de page met en évidence.
+export function isProgress(message: string): boolean {
+  return message.startsWith(PROGRESS);
 }
 
 const fmt = new Intl.NumberFormat("fr-FR");

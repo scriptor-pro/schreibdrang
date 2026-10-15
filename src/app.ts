@@ -47,6 +47,7 @@ import { correctionExtension, goToRemark } from "./correction/editeur";
 import type { CorrectionActions } from "./correction/editeur";
 import { Corrector } from "./correction/correcteur";
 import { Engine } from "./correction/moteur";
+import { isProgress } from "./correction/verification";
 import {
   emptyTextData,
   knownTextData,
@@ -986,6 +987,7 @@ const correctionStatus = document.querySelector<HTMLSpanElement>("#correction-st
 function setCorrectionStatus(message: string, error = false) {
   correctionStatus.textContent = error ? `Erreur : ${message}` : message;
   correctionStatus.classList.toggle("error", error);
+  correctionStatus.classList.toggle("progress", !error && isProgress(message));
 }
 
 const correctionActions: CorrectionActions = {

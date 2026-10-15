@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractPassages } from "../src/correction/extraction.ts";
-import { passagesIn, progressMessage, readingOrder, remarksMessage } from "../src/correction/verification.ts";
+import { isProgress, passagesIn, progressMessage, readingOrder, remarksMessage } from "../src/correction/verification.ts";
 
 const DOC = "Un.\n\nDeux.\n\nTrois.\n\nQuatre.";
 const PASSAGES = extractPassages(DOC, "roman");
@@ -32,4 +32,11 @@ test("le nombre de remarques, en toutes lettres quand il n'y en a pas", () => {
   assert.equal(remarksMessage(1), "1 remarque");
   assert.equal(remarksMessage(12), "12 remarques");
   assert.equal(remarksMessage(3556), "3 556 remarques");
+});
+
+test("le message d'avancement est reconnu, pour être affiché en outremer et en gras", () => {
+  assert.ok(isProgress(progressMessage(2, 5)));
+  assert.ok(isProgress(progressMessage(3, 3)));
+  assert.ok(!isProgress(remarksMessage(12)));
+  assert.ok(!isProgress(""));
 });

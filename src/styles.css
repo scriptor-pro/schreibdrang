@@ -862,6 +862,12 @@ select:focus-visible,
   white-space: nowrap;
 }
 
+/* L'avancement d'une vérification, en outremer et en gras. */
+#correction-status.progress {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 #correction-status.error {
   color: var(--error);
   font-weight: 700;
