@@ -21,6 +21,7 @@ test("des réglages valides sont conservés", () => {
     spelling: true,
     typography: false,
     reference: "reforme",
+    apostrophe: false,
   };
   assert.deepEqual(normalizeSettings(settings), settings);
 });
@@ -65,4 +66,10 @@ test("correction : une valeur invalide donne son défaut", () => {
   assert.equal(got.grammar, true);
   assert.equal(got.reference, "toutes");
   assert.equal(normalizeSettings({ reference: "classique" }).reference, "classique");
+});
+
+test("l'apostrophe typographique est posée à la frappe par défaut", () => {
+  assert.equal(normalizeSettings({}).apostrophe, true);
+  assert.equal(normalizeSettings({ apostrophe: "non" }).apostrophe, true);
+  assert.equal(normalizeSettings({ apostrophe: false }).apostrophe, false);
 });

@@ -48,6 +48,7 @@ import type { CorrectionActions } from "./correction/editeur";
 import { Corrector } from "./correction/correcteur";
 import { Engine } from "./correction/moteur";
 import { isProgress } from "./correction/verification";
+import { typographicApostrophes } from "./apostrophe";
 import {
   emptyTextData,
   knownTextData,
@@ -833,6 +834,18 @@ const dialogueKeys = Prec.high(
   ]),
 );
 
+// L'apostrophe droite tapée devient l'apostrophe typographique, si le réglage
+// le demande. Avant les autres saisies : « ’ » n'a pas de capitale, et le nom
+// d'un personnage la garde telle quelle.
+const apostropheInput = Prec.high(
+  EditorView.inputHandler.of((view, from, to, text) => {
+    if (!settings.apostrophe || !text.includes("'")) return false;
+    const insert = typographicApostrophes(text);
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, userEvent: "input.type" });
+    return true;
+  }),
+);
+
 const dialogueInput = EditorView.inputHandler.of((view, from, to, text) => {
   const { state } = view;
   const line = state.doc.lineAt(from);
@@ -1119,6 +1132,7 @@ function createState(doc: string): EditorState {
         },
       }),
       nbspMarks.of(settings.nbsp ? showNbsp : []),
+      apostropheInput,
       correctionExtension(correctionActions),
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
@@ -2165,6 +2179,7 @@ async function openSettings() {
   for (const name of CORRECTION_SETTINGS) {
     settingsForm.querySelector<HTMLInputElement>(`input[name="${name}"]`)!.checked = settings[name];
   }
+  settingsForm.querySelector<HTMLInputElement>('input[name="apostrophe"]')!.checked = settings.apostrophe;
   renderIgnoredRules();
   sizeInput.value = String(settings.size);
   fillFontSelect([]);
@@ -2189,6 +2204,7 @@ settingsForm.addEventListener("change", () => {
     startup: data.get("startup"),
     nbsp: settings.nbsp,
     consignes: settings.consignes,
+    apostrophe: data.get("apostrophe") === "on",
     checkWhileTyping: data.get("checkWhileTyping") === "on",
     grammar: data.get("grammar") === "on",
     spelling: data.get("spelling") === "on",

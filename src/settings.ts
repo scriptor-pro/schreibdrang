@@ -23,6 +23,8 @@ export interface Settings {
   typography: boolean;
   // Correction : le dictionnaire principal de Grammalecte.
   reference: Reference;
+  // Vrai si l'apostrophe droite tapée devient l'apostrophe typographique.
+  apostrophe: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -37,6 +39,7 @@ export const DEFAULTS: Settings = {
   spelling: true,
   typography: true,
   reference: "toutes",
+  apostrophe: true,
 };
 
 export const MIN_SIZE = 14;
@@ -62,7 +65,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const spelling = flag(data.spelling, DEFAULTS.spelling);
   const typography = flag(data.typography, DEFAULTS.typography);
   const reference = data.reference === "classique" || data.reference === "reforme" ? data.reference : DEFAULTS.reference;
-  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference };
+  const apostrophe = flag(data.apostrophe, DEFAULTS.apostrophe);
+  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference, apostrophe };
 }
 
 export function loadSettings(): Settings {
