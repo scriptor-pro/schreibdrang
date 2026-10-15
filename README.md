@@ -8,13 +8,14 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.39, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.40, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
 - **Écriture** d'un texte au format roman (chapitres en `#`, scènes en `##`), en Courier Prime, avec le compte des caractères et des mots.
 - **Format scénario** (première étape) : écriture en Fountain avec la mise en page d'un scénario dans l'éditeur, saisie d'un dialogue par la touche Tab, coupures de page et numéros de page, une fiche par scène au cork board, export `.fountain` avec sa page de titre, export PDF à la mise en page standard (A4, Courier Prime, intitulés de scène en gras, italique et gras de Fountain), aux mêmes coupures de page que l'éditeur.
 - **Templates de scénario** : huit modèles de structure (trois actes, quatre actes, huit séquences, Save the Cat, voyage du héros, Truby, cinq actes, Kishōtenketsu), choisis à la création d'un scénario ou par Scénario > Modèle…, avec une longueur cible (110 pages par défaut, de 1 à 999). L'éditeur montre la consigne de chaque étape dans la marge de droite, en face de la page où elle commence, ou dans la page si la fenêtre est étroite ; Affichage > Afficher les consignes les masque. Le modèle est retenu pour chaque fichier, et son nom suit le format dans la barre. Les consignes ne font pas partie du texte et ne sont jamais exportées.
+- **Format théâtre** : une pièce en actes (`# ACTE I`) et en scènes (`## Scène 1`), avec une liste des personnages facultative ; Tab, Entrée et « ( » guident la saisie du nom, de la réplique et de la didascalie ; un bandeau en haut de l'éditeur et le pied de page disent l'acte et la scène en cours. Au cork board, une colonne par acte ; la pièce est renumérotée après chaque déplacement, ou par Théâtre > Renuméroter les actes et les scènes. Export en PDF, Word et OpenDocument, en manuscrit (Courier Prime) ou en édition (EB Garamond, A4 ou A5).
 - **Format nouvelle** : des scènes sans chapitres, avec un cork board d'une seule colonne.
 - **Format du texte** : retenu pour chaque fichier ; demandé à l'ouverture d'un fichier `.md` ou `.txt` inconnu, et modifiable par Fichier > Format du texte…. Un fichier `.fountain` est toujours un scénario.
 - **Import** d'un document Word (`.docx`) ou OpenDocument (`.odt`) par « Ouvrir… » : il devient un nouveau texte en Markdown, le document d'origine n'est pas modifié.
@@ -28,7 +29,7 @@ Ce qui fonctionne :
 - **Paramètres** : thème clair ou sombre, police et taille du texte, apostrophe typographique (’) et espaces insécables à la frappe (avant ; ! ? : », après « et dans l'heure : 15 h 35), activées par défaut, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : le format théâtre, l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
+Ce qui n'existe pas encore : l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
 
 ## Prérequis
 
@@ -85,6 +86,9 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/correction/` | correction : passages à relire, remarques, dictionnaires, client du moteur, soulignement et bulle |
 | `public/correction/worker.js` | le worker qui fait tourner Grammalecte |
 | `public/grammalecte/` | Grammalecte 2.3.0, embarqué |
+| `src/theatre*.ts` | format théâtre : nature des lignes, renumérotation, saisie, éditeur, traduction pour Pandoc, choix d'export retenus |
+| `scripts/make-theatre-models.py` | fabrique les modèles Word et OpenDocument des trois mises en page d'une pièce |
+| `src-tauri/resources/theatre.lua` | filtre Pandoc du PDF d'une pièce |
 | `scripts/fetch-grammalecte.py` | télécharge Grammalecte et vérifie son empreinte |
 | `scripts/fetch-fonts.py` | télécharge les polices embarquées depuis fonts.bunny.net |
 | `scripts/make-icon.py` | dessine l'icône de l'app |
@@ -112,5 +116,6 @@ Composants tiers embarqués, sous leurs propres licences :
 - [Jost*](https://indestructibletype.com/Jost.html), police de l'interface : SIL Open Font License 1.1.
 - [Courier Prime](https://quoteunquoteapps.com/courierprime/), police du texte : SIL Open Font License 1.1.
 - [Literata](https://github.com/googlefonts/literata), police des exports : SIL Open Font License 1.1.
+- [EB Garamond](https://github.com/octaviopardo/EBGaramond12), police de l'édition d'une pièce : SIL Open Font License 1.1.
 - [Lucide](https://lucide.dev/), pictogrammes : licence ISC.
 - [Grammalecte](https://grammalecte.net/) 2.3.0, par Olivier R., correction : licence GPL 3. Tant qu'il en fait partie, l'app est de fait distribuée sous GPL 3.
