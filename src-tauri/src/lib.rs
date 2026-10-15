@@ -8,8 +8,12 @@ use tauri::{AppHandle, Emitter, WebviewWindow, Wry};
 // Fichiers nécessaires à l'export, embarqués dans l'exécutable : les modèles
 // Word et OpenDocument réglés sur Literata, en A4 avec des marges de 2,5 cm,
 // la police elle-même pour le PDF, et Courier Prime pour la couverture et le
-// PDF d'un scénario.
-const RESOURCES: [(&str, &[u8]); 10] = [
+// PDF d'un scénario ; et, pour le théâtre, le filtre du PDF, les modèles de ses
+// trois mises en page et EB Garamond.
+// Filtre Pandoc du PDF d'une pièce de théâtre.
+const THEATRE_FILTER: &str = include_str!("../resources/theatre.lua");
+
+const RESOURCES: [(&str, &[u8]); 21] = [
     ("reference.docx", include_bytes!("../resources/reference.docx")),
     ("reference.odt", include_bytes!("../resources/reference.odt")),
     (
@@ -43,6 +47,29 @@ const RESOURCES: [(&str, &[u8]); 10] = [
     (
         "fonts/CourierPrime-BoldItalic.ttf",
         include_bytes!("../resources/fonts/CourierPrime-BoldItalic.ttf"),
+    ),
+    ("theatre.lua", THEATRE_FILTER.as_bytes()),
+    ("theatre-manuscrit.docx", include_bytes!("../resources/theatre-manuscrit.docx")),
+    ("theatre-manuscrit.odt", include_bytes!("../resources/theatre-manuscrit.odt")),
+    ("theatre-edition-a4.docx", include_bytes!("../resources/theatre-edition-a4.docx")),
+    ("theatre-edition-a4.odt", include_bytes!("../resources/theatre-edition-a4.odt")),
+    ("theatre-edition-a5.docx", include_bytes!("../resources/theatre-edition-a5.docx")),
+    ("theatre-edition-a5.odt", include_bytes!("../resources/theatre-edition-a5.odt")),
+    (
+        "fonts/EBGaramond-Regular.ttf",
+        include_bytes!("../resources/fonts/EBGaramond-Regular.ttf"),
+    ),
+    (
+        "fonts/EBGaramond-Italic.ttf",
+        include_bytes!("../resources/fonts/EBGaramond-Italic.ttf"),
+    ),
+    (
+        "fonts/EBGaramond-Bold.ttf",
+        include_bytes!("../resources/fonts/EBGaramond-Bold.ttf"),
+    ),
+    (
+        "fonts/EBGaramond-BoldItalic.ttf",
+        include_bytes!("../resources/fonts/EBGaramond-BoldItalic.ttf"),
     ),
 ];
 
@@ -328,6 +355,68 @@ async fn export_document(path: String, format: String, markdown: String, layout:
     // La conversion peut durer plusieurs dizaines de secondes : elle tourne
     // hors du fil principal pour ne pas figer l'interface.
     tauri::async_runtime::spawn_blocking(move || export(Path::new(&path), &format, &markdown, layout))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Les trois mises en page d'une pièce : leurs modèles de document s'appellent
+/// theatre-<nom>.docx et theatre-<nom>.odt.
+const PLAY_MODELS: [&str; 3] = ["manuscrit", "edition-a4", "edition-a5"];
+
+/// Les arguments de Pandoc pour le PDF d'une pièce, selon sa mise en page.
+fn play_pdf_args(model: &str, resources: &Path) -> Result<Vec<String>, String> {
+    let (font, size, paper, margin, layout) = match model {
+        "manuscrit" => ("CourierPrime", "12pt", "a4", "2.5cm", "manuscrit"),
+        "edition-a4" => ("EBGaramond", "12pt", "a4", "2.5cm", "edition"),
+        "edition-a5" => ("EBGaramond", "11pt", "a5", "2cm", "edition"),
+        other => return Err(format!("Mise en page inconnue : {other}")),
+    };
+    let mut args = vec![
+        "--pdf-engine=xelatex".to_string(),
+        format!("--lua-filter={}", resources.join("theatre.lua").display()),
+        "--metadata".to_string(),
+        format!("theatre-layout={layout}"),
+    ];
+    for variable in [
+        "documentclass=article".to_string(),
+        "lang=fr".to_string(),
+        format!("papersize={paper}"),
+        format!("fontsize={size}"),
+        format!("geometry:margin={margin}"),
+        format!("mainfont={font}-Regular.ttf"),
+        format!("mainfontoptions=Path={}/", resources.join("fonts").display()),
+        format!("mainfontoptions=BoldFont={font}-Bold.ttf"),
+        format!("mainfontoptions=ItalicFont={font}-Italic.ttf"),
+        format!("mainfontoptions=BoldItalicFont={font}-BoldItalic.ttf"),
+    ] {
+        args.push("--variable".to_string());
+        args.push(variable);
+    }
+    Ok(args)
+}
+
+/// Exporte une pièce, déjà traduite en Markdown de Pandoc à styles nommés,
+/// dans l'une de ses trois mises en page.
+fn export_play_blocking(path: &Path, format: &str, markdown: &str, model: &str) -> Result<(), String> {
+    if !PLAY_MODELS.contains(&model) {
+        return Err(format!("Mise en page inconnue : {model}"));
+    }
+    let resources = resources_dir()?;
+    let markdown = with_superscripts(markdown);
+    match format {
+        "docx" | "odt" => {
+            let reference = resources.join(format!("theatre-{model}.{format}"));
+            run_pandoc(&markdown, path, &[format!("--reference-doc={}", reference.display())])
+        }
+        "pdf" => run_pandoc(&markdown, path, &play_pdf_args(model, &resources)?),
+        other => Err(format!("Format d'export inconnu pour une pièce : {other}")),
+    }
+}
+
+#[tauri::command]
+async fn export_play(path: String, format: String, markdown: String, model: String) -> Result<(), String> {
+    // Comme export_document : hors du fil principal.
+    tauri::async_runtime::spawn_blocking(move || export_play_blocking(Path::new(&path), &format, &markdown, &model))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -770,6 +859,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .build(app)?;
     let screenplay = SubmenuBuilder::new(app, "Scénario").item(&model).item(&cover).build()?;
 
+    // Inactive au lancement : la page l'active quand le texte est une pièce.
+    let renumber = MenuItemBuilder::with_id("theatre-renumber", "Renuméroter les actes et les scènes")
+        .enabled(false)
+        .build(app)?;
+    let theatre = SubmenuBuilder::new(app, "Théâtre").item(&renumber).build()?;
+
     // Inactives au lancement, sur l'accueil : la page les active sur la vue Texte.
     let correction_item = |id: &str, label: &str, shortcut: Option<&str>| {
         let builder = MenuItemBuilder::with_id(id, label).enabled(false);
@@ -802,7 +897,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("help-about", "À propos de Schreibdrang", None)?)
         .build()?;
 
-    MenuBuilder::new(app).items(&[&file, &edit, &view, &correction, &screenplay, &help]).build()
+    MenuBuilder::new(app).items(&[&file, &edit, &view, &correction, &screenplay, &theatre, &help]).build()
 }
 
 /// Active ou désactive une entrée de la barre de menu, cherchée dans chaque menu.
@@ -864,6 +959,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             export_document,
+            export_play,
             import_document,
             export_cover,
             export_screenplay,
@@ -882,6 +978,77 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Le contenu d'un fichier d'une archive embarquée.
+    fn part(archive: &str, name: &str) -> String {
+        let bytes = RESOURCES.iter().find(|(file, _)| *file == archive).expect("ressource embarquée").1;
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("archive lisible");
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name(name).expect("fichier présent"), &mut text).expect("texte lisible");
+        text
+    }
+
+    #[test]
+    fn les_modeles_du_theatre_definissent_leurs_styles() {
+        for model in PLAY_MODELS {
+            let docx = part(&format!("theatre-{model}.docx"), "word/styles.xml");
+            let odt = part(&format!("theatre-{model}.odt"), "styles.xml");
+            for style in ["Acte", "Scene", "Personnages", "Distribution", "Personnage", "Replique", "Didascalie", "Texte"] {
+                assert!(docx.contains(&format!(r#"w:styleId="{style}""#)), "theatre-{model}.docx : {style}");
+                assert!(odt.contains(&format!(r#"style:name="{style}""#)), "theatre-{model}.odt : {style}");
+            }
+        }
+    }
+
+    #[test]
+    fn chaque_modele_du_theatre_a_sa_page_et_sa_police() {
+        assert!(part("theatre-edition-a5.docx", "word/document.xml").contains(r#"w:w="8391""#));
+        assert!(part("theatre-edition-a5.odt", "styles.xml").contains(r#"fo:page-width="14.8cm""#));
+        assert!(part("theatre-edition-a4.docx", "word/document.xml").contains(r#"w:w="11906""#));
+        assert!(part("theatre-manuscrit.docx", "word/styles.xml").contains(r#"w:ascii="Courier Prime""#));
+        assert!(part("theatre-edition-a4.odt", "styles.xml").contains(r#"style:font-name="EB Garamond""#));
+        assert!(part("theatre-manuscrit.docx", "word/footer1.xml").contains("PAGE"));
+    }
+
+    #[test]
+    fn le_pdf_d_une_piece_suit_sa_mise_en_page() {
+        let resources = Path::new("/ressources");
+        let a5 = play_pdf_args("edition-a5", resources).expect("modèle connu");
+        for expected in ["papersize=a5", "fontsize=11pt", "geometry:margin=2cm", "mainfont=EBGaramond-Regular.ttf", "theatre-layout=edition"] {
+            assert!(a5.contains(&expected.to_string()), "{expected}");
+        }
+        let manuscript = play_pdf_args("manuscrit", resources).expect("modèle connu");
+        for expected in ["papersize=a4", "fontsize=12pt", "mainfont=CourierPrime-Regular.ttf", "theatre-layout=manuscrit"] {
+            assert!(manuscript.contains(&expected.to_string()), "{expected}");
+        }
+        assert!(play_pdf_args("affiche", resources).is_err());
+    }
+
+    #[test]
+    fn le_filtre_du_theatre_met_en_page_le_pdf() {
+        let dir = std::env::temp_dir().join("schreibdrang-test-theatre");
+        fs::create_dir_all(&dir).expect("dossier d'essai");
+        let filter = dir.join("theatre.lua");
+        fs::write(&filter, THEATRE_FILTER).expect("filtre écrit");
+        let markdown = "::: {custom-style=\"Acte\"}\nACTE I\n:::\n\n::: {custom-style=\"Personnage\"}\nCLAIRE\n:::\n\n::: {custom-style=\"Replique\"}\nLe 1ᵉʳ mai, à 15\u{a0}h\u{a0}35\u{202f}!\n:::\n";
+        let latex = |layout: &str| -> String {
+            let mut child = Command::new("pandoc")
+                .args(["--from", "markdown-smart", "--to", "latex", "--metadata"])
+                .arg(format!("theatre-layout={layout}"))
+                .arg(format!("--lua-filter={}", filter.display()))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Pandoc est installé");
+            child.stdin.take().expect("stdin").write_all(with_superscripts(markdown).as_bytes()).expect("écrit");
+            String::from_utf8(child.wait_with_output().expect("sortie").stdout).expect("UTF-8")
+        };
+        let manuscript = latex("manuscrit");
+        assert!(manuscript.contains("\\clearpage\\begin{center}\\bfseries"));
+        assert!(manuscript.contains("1\\textsuperscript{er}"));
+        assert!(!manuscript.contains("\\begin{center}\\small"));
+        assert!(latex("edition").contains("\\begin{center}\\small"));
+    }
 
     #[test]
     fn les_ordinaux_deviennent_des_exposants_pour_pandoc() {
