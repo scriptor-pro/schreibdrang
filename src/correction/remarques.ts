@@ -65,6 +65,8 @@ export interface RemarkFilter {
 
 export const SPELLING_RULE = "orthographe";
 export const SPELLING_MESSAGE = "Ce mot n'est pas dans le dictionnaire.";
+// Type des remarques de Grammalecte sur les mots composés inconnus.
+const COMPOUND = "mc";
 
 // Options du groupe « Typographie » de Grammalecte (lStructOpt, dans
 // fr/gc_options.js). Les autres options sont de la grammaire.
@@ -117,8 +119,19 @@ export function remarksOf(passage: Passage, reply: EngineReply, filter: RemarkFi
       passage: { from: passage.from, to: passage.to },
     });
   };
-  for (const error of reply.grammar) add(error.start, error.end, kindOf(error.type), error.rule, error.message, error.suggestions);
-  for (const word of reply.spelling) {
+  // Un mot composé absent du dictionnaire (option « mc ») est traité comme un
+  // mot inconnu, et une seule fois s'il l'est déjà par l'orthographe.
+  const unknown = [...reply.spelling];
+  for (const error of reply.grammar) {
+    if (error.type === COMPOUND) {
+      if (!unknown.some((word) => word.start === error.start && word.end === error.end)) {
+        unknown.push({ start: error.start, end: error.end, word: passage.text.slice(error.start, error.end) });
+      }
+    } else {
+      add(error.start, error.end, kindOf(error.type), error.rule, error.message, error.suggestions);
+    }
+  }
+  for (const word of unknown) {
     if (!filter.accepts(word.word)) add(word.start, word.end, "orthographe", SPELLING_RULE, SPELLING_MESSAGE, []);
   }
   return remarks.sort((a, b) => a.from - b.from || a.to - b.to);

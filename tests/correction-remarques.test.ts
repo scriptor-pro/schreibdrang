@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractPassages } from "../src/correction/extraction.ts";
-import { SPELLING_RULE, kindOf, remarkKey, remarksOf, wordAcceptor } from "../src/correction/remarques.ts";
+import { SPELLING_MESSAGE, SPELLING_RULE, kindOf, remarkKey, remarksOf, wordAcceptor } from "../src/correction/remarques.ts";
 import type { EngineReply, RemarkFilter } from "../src/correction/remarques.ts";
 
 const ALL: RemarkFilter = {
@@ -72,4 +72,22 @@ test("les dictionnaires ignorent la casse et la forme de l'apostrophe", () => {
   assert.ok(accepts("Aujourd’hui"));
   assert.ok(accepts("Élise"));
   assert.ok(!accepts("Marc"));
+});
+
+const COMPOSE: EngineReply = {
+  grammar: [{ start: 4, end: 19, type: "mc", rule: "mc_mot_composé", message: "Mot inconnu du dictionnaire.", suggestions: [] }],
+  spelling: [],
+};
+
+test("un mot composé inconnu est une remarque d'orthographe, comme un mot inconnu", () => {
+  const [passage] = extractPassages("Les garde-bouteille.", "roman");
+  const remarks = remarksOf(passage, COMPOSE, ALL);
+  assert.deepEqual(remarks.map((r) => [r.kind, r.excerpt, r.rule, r.message]), [["orthographe", "garde-bouteille", SPELLING_RULE, SPELLING_MESSAGE]]);
+  assert.deepEqual(remarksOf(passage, COMPOSE, { ...ALL, accepts: wordAcceptor(["garde-bouteille"]) }), []);
+});
+
+test("un mot composé inconnu de l'orthographe n'est signalé qu'une fois", () => {
+  const [passage] = extractPassages("Les garde-bouteille.", "roman");
+  const both = { ...COMPOSE, spelling: [{ start: 4, end: 19, word: "garde-bouteille" }] };
+  assert.equal(remarksOf(passage, both, ALL).length, 1);
 });

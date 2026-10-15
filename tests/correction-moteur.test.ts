@@ -70,3 +70,8 @@ test("sans les fichiers de Grammalecte, le worker dit qu'il n'a pas pu démarrer
   assert.equal(message.type, "failed");
   assert.ok(message.message.length > 0);
 });
+
+test("les mots composés absents du dictionnaire sont signalés", () => {
+  const reply = relire(7, "Il prit le porte-chaussure.");
+  assert.deepEqual(reply.grammar.map((e) => [e.start, e.end, e.type]), [[11, 26, "mc"]]);
+});

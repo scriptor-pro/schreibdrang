@@ -45,6 +45,9 @@ try {
   phonet.init(data("fr/phonet_data.json"));
   mfsp.init(data("fr/mfsp_data.json"));
   gc_engine.load("JavaScript", "aHSL", ROOT + "graphspell/_dictionaries");
+  // Options activées en plus des réglages par défaut de Grammalecte : les
+  // mots composés absents du dictionnaire (décidé le 15 octobre 2026).
+  gc_engine.setOption("mc", true);
   speller = gc_engine.getSpellChecker();
   if (!speller) throw new Error("le dictionnaire n'a pas pu être chargé");
   postMessage({ type: "ready" });
