@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.38, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.39, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
 
 Ce qui fonctionne :
 
@@ -24,10 +24,11 @@ Ce qui fonctionne :
 - **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
 - **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
 - **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
+- **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : le format théâtre, l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, la correction grammaticale, l'import `.epub` et Final Draft.
+Ce qui n'existe pas encore : le format théâtre, l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
 
 ## Prérequis
 
@@ -81,6 +82,10 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/icons.ts` | pictogrammes |
 | `src/styles.css` | polices embarquées, couleurs, thèmes, toutes les règles |
 | `src-tauri/src/lib.rs` | menu natif, lecture et écriture des fichiers, export, polices installées |
+| `src/correction/` | correction : passages à relire, remarques, dictionnaires, client du moteur, soulignement et bulle |
+| `public/correction/worker.js` | le worker qui fait tourner Grammalecte |
+| `public/grammalecte/` | Grammalecte 2.3.0, embarqué |
+| `scripts/fetch-grammalecte.py` | télécharge Grammalecte et vérifie son empreinte |
 | `scripts/fetch-fonts.py` | télécharge les polices embarquées depuis fonts.bunny.net |
 | `scripts/make-icon.py` | dessine l'icône de l'app |
 | `scripts/make-cork.py` | dessine le grain du liège du cork board |
@@ -92,7 +97,7 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 
 L'interface suit le modernisme typographique : noir, blanc et un seul bleu outremer, des angles droits, des filets, aucune ombre. Seul le cork board s'en écarte, avec son fond en liège. Elle s'applique selon deux régimes : affirmée là où l'on choisit et organise (accueil, cork board, boîtes de dialogue), calme là où l'on écrit (éditeur et plein écran). Elle existe en thème clair et en thème sombre, et vise la conformité à WCAG 2.2 niveau AA et au RGAA.
 
-Les polices et les pictogrammes sont embarqués dans l'app : rien n'est chargé depuis le réseau à l'exécution.
+Les polices, les pictogrammes et le correcteur sont embarqués dans l'app : rien n'est chargé depuis le réseau à l'exécution.
 
 ## Pile technique
 
@@ -108,3 +113,4 @@ Composants tiers embarqués, sous leurs propres licences :
 - [Courier Prime](https://quoteunquoteapps.com/courierprime/), police du texte : SIL Open Font License 1.1.
 - [Literata](https://github.com/googlefonts/literata), police des exports : SIL Open Font License 1.1.
 - [Lucide](https://lucide.dev/), pictogrammes : licence ISC.
+- [Grammalecte](https://grammalecte.net/) 2.3.0, par Olivier R., correction : licence GPL 3. Tant qu'il en fait partie, l'app est de fait distribuée sous GPL 3.
