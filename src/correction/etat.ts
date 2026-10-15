@@ -10,10 +10,15 @@ import type { Remark } from "./remarques.ts";
 export const setRemarks = StateEffect.define<Remark[]>();
 // Ouvre la bulle d'une remarque, ou la ferme.
 export const openBubble = StateEffect.define<Remark | null>();
+// Avec openBubble, au clavier (F8, Maj+F8) : la bulle prend le focus. Ouverte
+// par un clic, elle le laisse au texte, où l'on continue d'écrire.
+export const focusBubble = StateEffect.define<boolean>();
 
 export interface Correction {
   remarks: Remark[];
   bubble: Remark | null;
+  // Vrai si la bulle ouverte prend le focus.
+  focus: boolean;
 }
 
 function mapRemarks(remarks: Remark[], changes: ChangeSet): Remark[] {
@@ -30,9 +35,9 @@ function mapRemarks(remarks: Remark[], changes: ChangeSet): Remark[] {
 // Un seul champ pour les remarques et la bulle : la bulle se ferme quand sa
 // remarque disparaît, ce qu'un champ séparé ne pourrait pas voir.
 export const correctionField = StateField.define<Correction>({
-  create: () => ({ remarks: [], bubble: null }),
+  create: () => ({ remarks: [], bubble: null, focus: false }),
   update(value, tr) {
-    let { remarks, bubble } = value;
+    let { remarks, bubble, focus } = value;
     // La bulle se ferme quand le texte change ou quand le curseur part ailleurs.
     if (tr.docChanged) {
       bubble = null;
@@ -42,13 +47,18 @@ export const correctionField = StateField.define<Correction>({
     }
     for (const effect of tr.effects) {
       if (effect.is(setRemarks)) remarks = effect.value;
-      if (effect.is(openBubble)) bubble = effect.value;
+      if (effect.is(openBubble)) {
+        bubble = effect.value;
+        focus = false;
+      }
     }
     // Les remarques redessinées sont de nouveaux objets : la bulle garde le
     // sien tant qu'une remarque de même clé commence au même endroit.
     const open = bubble;
     if (open && !remarks.some((remark) => remark.key === open.key && remark.from === open.from)) bubble = null;
-    return remarks === value.remarks && bubble === value.bubble ? value : { remarks, bubble };
+    for (const effect of tr.effects) if (effect.is(focusBubble)) focus = effect.value;
+    if (!bubble) focus = false;
+    return remarks === value.remarks && bubble === value.bubble && focus === value.focus ? value : { remarks, bubble, focus };
   },
 });
 

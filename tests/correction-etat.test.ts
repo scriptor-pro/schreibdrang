@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EditorState } from "@codemirror/state";
-import { correctionField, nextRemark, openBubble, remarkAt, setRemarks } from "../src/correction/etat.ts";
+import { correctionField, focusBubble, nextRemark, openBubble, remarkAt, setRemarks } from "../src/correction/etat.ts";
 import type { Remark } from "../src/correction/remarques.ts";
 
 const DOC = "Un deux.\n\nTrois quatre.";
@@ -78,4 +78,16 @@ test("la remarque sous le curseur, jamais une remarque vide", () => {
   assert.equal(remarkAt([DEUX, QUATRE], QUATRE.from + 2), QUATRE);
   assert.equal(remarkAt([DEUX, QUATRE], 8), undefined);
   assert.equal(remarkAt([empty], DEUX.from), undefined);
+});
+
+test("une bulle ouverte par un clic laisse le focus au texte, une bulle ouverte au clavier le prend", () => {
+  const clicked = stateWith([DEUX, QUATRE]).update({ effects: openBubble.of(QUATRE) }).state;
+  assert.equal(clicked.field(correctionField).focus, false);
+  const keyboard = stateWith([DEUX, QUATRE]).update({ effects: [openBubble.of(QUATRE), focusBubble.of(true)] }).state;
+  assert.equal(keyboard.field(correctionField).focus, true);
+  // Redessiner les remarques ne change pas qui a le focus.
+  assert.equal(keyboard.update({ effects: setRemarks.of([{ ...DEUX }, { ...QUATRE }]) }).state.field(correctionField).focus, true);
+  // Une autre bulle ouverte par un clic ne prend pas le focus.
+  assert.equal(keyboard.update({ effects: openBubble.of(DEUX) }).state.field(correctionField).focus, false);
+  assert.equal(keyboard.update({ effects: openBubble.of(null) }).state.field(correctionField).focus, false);
 });

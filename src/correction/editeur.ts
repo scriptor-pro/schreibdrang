@@ -5,7 +5,7 @@ import { Facet, Prec } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { Decoration, EditorView, keymap, showTooltip } from "@codemirror/view";
 import type { Tooltip } from "@codemirror/view";
-import { correctionField, nextRemark, openBubble, remarkAt } from "./etat.ts";
+import { correctionField, focusBubble, nextRemark, openBubble, remarkAt } from "./etat.ts";
 import type { Kind, Remark } from "./remarques.ts";
 import { bubbleView } from "./bulle.ts";
 
@@ -64,7 +64,7 @@ const bubble = showTooltip.compute([correctionField], (state) => {
   return remark ? tooltipFor(remark) : null;
 });
 
-// Un clic sur un passage souligné ouvre sa bulle.
+// Un clic sur un passage souligné ouvre sa bulle, sans quitter le texte.
 const clickToOpen = EditorView.domEventHandlers({
   click(event, view) {
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -74,10 +74,21 @@ const clickToOpen = EditorView.domEventHandlers({
   },
 });
 
-// Échap dans le texte arrête une vérification en cours ; sinon, il garde ses
-// autres usages (fermer la recherche, quitter le plein écran).
+// Échap dans le texte arrête une vérification en cours, ou ferme la bulle
+// ouverte ; sinon, il garde ses autres usages (fermer la recherche, quitter
+// le plein écran).
 const escape = Prec.high(
-  keymap.of([{ key: "Escape", run: (view) => view.state.facet(actionsFacet)?.stop() ?? false }]),
+  keymap.of([
+    {
+      key: "Escape",
+      run: (view) => {
+        if (view.state.facet(actionsFacet)?.stop()) return true;
+        if (!view.state.field(correctionField).bubble) return false;
+        view.dispatch({ effects: openBubble.of(null) });
+        return true;
+      },
+    },
+  ]),
 );
 
 export function correctionExtension(actions: CorrectionActions): Extension {
@@ -85,14 +96,14 @@ export function correctionExtension(actions: CorrectionActions): Extension {
 }
 
 // F8 et Maj+F8 : le curseur va sur la remarque suivante ou précédente, et sa
-// bulle s'ouvre.
+// bulle s'ouvre et prend le focus.
 export function goToRemark(view: EditorView, direction: 1 | -1): boolean {
   const remarks = view.state.field(correctionField, false)?.remarks ?? [];
   const remark = nextRemark(remarks, view.state.selection.main.head, direction);
   if (!remark) return false;
   view.dispatch({
     selection: { anchor: remark.from },
-    effects: [openBubble.of(remark), EditorView.scrollIntoView(remark.from, { y: "center" })],
+    effects: [openBubble.of(remark), focusBubble.of(true), EditorView.scrollIntoView(remark.from, { y: "center" })],
   });
   return true;
 }

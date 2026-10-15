@@ -1,10 +1,10 @@
 // La bulle d'une remarque : sa sorte, le message, les suggestions et les
-// actions. Tout se fait au clavier : le focus arrive sur la première
+// actions. Ouverte au clavier (F8), elle prend le focus : il arrive sur la première
 // suggestion, Tab passe d'un bouton à l'autre, Entrée ou Espace active le
 // bouton, Échap ferme la bulle et rend le focus au texte.
 
 import type { EditorView, TooltipView } from "@codemirror/view";
-import { openBubble } from "./etat.ts";
+import { correctionField, openBubble } from "./etat.ts";
 import { KIND_LABELS } from "./remarques.ts";
 import type { Remark } from "./remarques.ts";
 import type { CorrectionActions } from "./editeur.ts";
@@ -95,7 +95,10 @@ export function bubbleView(view: EditorView, remark: Remark, actions: Correction
   return {
     dom,
     mount() {
-      // Pour un mot inconnu, le focus attend sur la bulle que les suggestions arrivent.
+      // Ouverte par un clic, la bulle laisse le focus au texte : on y continue
+      // d'écrire. Ouverte au clavier, elle le prend ; pour un mot inconnu, il
+      // attend sur la bulle que les suggestions arrivent.
+      if (!view.state.field(correctionField).focus) return;
       const first = remark.kind === "orthographe" ? dom : (suggestions.querySelector("button") ?? buttons.querySelector("button"));
       first?.focus();
     },
