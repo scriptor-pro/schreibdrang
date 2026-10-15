@@ -746,6 +746,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&correction_item("correction-previous", "Remarque précédente", Some("Shift+F8"))?)
         .item(&correction_item("correction-clear", "Effacer les remarques", None)?)
         .separator()
+        .item(&correction_item("correction-apostrophes", "Utiliser l'apostrophe typographique", None)?)
+        .separator()
         .item(&typing)
         .separator()
         .item(&correction_item("correction-dictionaries", "Dictionnaires…", None)?)

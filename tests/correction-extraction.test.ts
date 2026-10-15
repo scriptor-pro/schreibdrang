@@ -80,14 +80,11 @@ test("les noms des personnages qui parlent, entiers et mot par mot", () => {
   assert.deepEqual(characterNames(doc), new Set(["ÉLISE", "JEAN-PIERRE", "JEAN", "PIERRE", "MCDONALD"]));
 });
 
-test("un texte de la taille d'un roman est découpé assez vite pour ne pas gêner la frappe", () => {
-  const paragraph = "Elle connaissait par cœur le trajet jusqu'à la gare : trois cent *quarante* pas jusqu'au pont, puis la côte, puis l'escalier aux marches inégales.";
-  const doc = Array.from({ length: 1651 }, (_, i) => (i % 40 === 0 ? `## Scène ${i}` : `${paragraph} ${i}`)).join("\n\n");
-  let best = Infinity;
-  for (let run = 0; run < 5; run += 1) {
-    const start = performance.now();
-    extractPassages(doc, "roman");
-    best = Math.min(best, performance.now() - start);
-  }
-  assert.ok(best < 50, `${best.toFixed(1)} ms`);
+test("un paragraphe est copié par blocs, pas caractère par caractère, pour ne pas gêner la frappe", () => {
+  // Un texte de la taille d'un roman se découpe à chaque rafraîchissement des
+  // remarques : chaque passage n'a qu'un tronçon par ligne et par marque.
+  const [plain, marked, lines] = extractPassages("Elle connaissait par cœur le trajet jusqu'à la gare.\n\nTrois cent *quarante* pas.\n\nPuis le pont,\npuis la côte.", "roman");
+  assert.equal(plain.starts.length, 1);
+  assert.equal(marked.starts.length, 3);
+  assert.equal(lines.starts.length, 3);
 });

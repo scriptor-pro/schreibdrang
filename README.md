@@ -24,7 +24,7 @@ Ce qui fonctionne :
 - **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
 - **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
 - **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
-- **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre.
+- **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre. Correction > Utiliser l'apostrophe typographique remplace en une fois toutes les apostrophes droites du texte.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, apostrophe typographique (’) et espaces insécables à la frappe (avant ; ! ? : », après « et dans l'heure : 15 h 35), activées par défaut, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 

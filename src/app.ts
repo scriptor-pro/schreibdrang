@@ -48,7 +48,7 @@ import type { CorrectionActions } from "./correction/editeur";
 import { Corrector } from "./correction/correcteur";
 import { Engine } from "./correction/moteur";
 import { isProgress } from "./correction/verification";
-import { typographicApostrophes } from "./apostrophe";
+import { apostropheChanges, apostrophesMessage, typographicApostrophes } from "./apostrophe";
 import { frenchSpacing } from "./espaces";
 import {
   emptyTextData,
@@ -996,6 +996,7 @@ const CORRECTION_ITEMS = [
   "correction-next",
   "correction-previous",
   "correction-clear",
+  "correction-apostrophes",
   "correction-typing",
   "correction-dictionaries",
 ];
@@ -2341,6 +2342,14 @@ function openDictionaries() {
   dictionariesDialog.showModal();
 }
 
+// Correction > Utiliser l'apostrophe typographique : toutes les apostrophes
+// droites du texte, remplacées en une seule modification que Ctrl+Z annule.
+function useTypographicApostrophes() {
+  const changes = apostropheChanges(view.state.doc.toString());
+  if (changes.length) view.dispatch({ changes, userEvent: "input.replace.all" });
+  setStatus(apostrophesMessage(changes.length));
+}
+
 function goToNextRemark(direction: 1 | -1) {
   if (!goToRemark(view, direction)) setCorrectionStatus("Aucune remarque affichée : lance d'abord la vérification (F7).");
 }
@@ -2570,6 +2579,7 @@ const ACTIONS: Record<string, () => void> = {
   "correction-next": () => goToNextRemark(1),
   "correction-previous": () => goToNextRemark(-1),
   "correction-clear": () => corrector.clear(),
+  "correction-apostrophes": useTypographicApostrophes,
   "correction-typing": toggleCheckWhileTyping,
   "correction-dictionaries": openDictionaries,
   "scenario-cover": openCover,
