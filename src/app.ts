@@ -51,6 +51,11 @@ import { isProgress } from "./correction/verification";
 import { apostropheChanges, apostrophesMessage, typographicApostrophes } from "./apostrophe";
 import { frenchSpacing } from "./espaces";
 import { ordinalChanges, ordinalsMessage } from "./ordinaux";
+import { NEW_PLAY, classifyPlay, parsePlay, playPosition, renumberChanges, renumberMessage, renumberPlay, sceneOffset } from "./theatre";
+import { theatreExtension } from "./theatre-editeur";
+import { playModel, playToPandoc } from "./theatre-pandoc";
+import type { PlayLayout, PlayPage } from "./theatre-pandoc";
+import { knownPlayExport, loadPlayExports, savePlayExports, withPlayExport } from "./theatre-exports";
 import {
   emptyTextData,
   knownTextData,
@@ -181,6 +186,12 @@ function scheduleCounts(view: EditorView) {
       const line = view.state.doc.lineAt(head);
       counts += `, feuillet ${pageAt(sheetBreaks, line.number - 1, head - line.from)} sur ${sheetBreaks.length + 1}`;
     }
+    // Théâtre : l'acte et la scène où se trouve le curseur.
+    if (currentFormat === "theatre") {
+      const lines = view.state.doc.toJSON();
+      const position = playPosition(lines, classifyPlay(lines), view.state.doc.lineAt(view.state.selection.main.head).number - 1);
+      if (position) counts = `${position} · ${counts}`;
+    }
     countsEl.textContent = counts;
   }, 400);
 }
@@ -284,6 +295,10 @@ function setFormat(format: Format) {
       setStatus(`le menu n'a pas pu être mis à jour (${error})`, true);
     });
   }
+  // La renumérotation n'agit que sur une pièce.
+  invoke("set_menu_item_enabled", { id: "theatre-renumber", enabled: format === "theatre" }).catch((error) => {
+    setStatus(`le menu Théâtre n'a pas pu être mis à jour (${error})`, true);
+  });
 }
 
 // Un fichier .fountain est toujours un scénario : son format ne se change pas.
@@ -1057,6 +1072,8 @@ function createState(doc: string): EditorState {
       currentFormat === "scenario"
         ? [consignesInMargin, screenplayLayout, consignesLayer, consignesPlace, dialogueEntry, fountainLines, fountainEmphasis, fountainTheme, pageBreakTheme, dialogueKeys, dialogueInput]
         : [markdown(), syntaxHighlighting(textHighlight)],
+      // Une pièce : mise en forme de chaque ligne, saisie guidée, bandeau.
+      currentFormat === "theatre" ? theatreExtension() : [],
       // Un texte vanilla se compte en feuillets, sur une feuille à sa mise en page.
       currentFormat === "vanilla" ? [sheetLayout, pageBreakTheme] : [],
       sheetConf.of(sheetExtension()),
@@ -1156,8 +1173,8 @@ function createState(doc: string): EditorState {
           recordLatency();
           scheduleCounts(update.view);
           corrector.typed();
-        } else if (update.selectionSet && (currentFormat === "scenario" || currentFormat === "vanilla")) {
-          // Le numéro de la page ou du feuillet en cours suit le curseur.
+        } else if (update.selectionSet && (currentFormat === "scenario" || currentFormat === "vanilla" || currentFormat === "theatre")) {
+          // Le numéro de la page, du feuillet, ou l'acte et la scène en cours suivent le curseur.
           scheduleCounts(update.view);
         }
       }),
@@ -1201,6 +1218,10 @@ let boardPreamble = "";
 // Titre de la dernière scène déplacée, pour la retrouver en revenant au texte.
 let movedHeading: string | undefined;
 
+// Dans une pièce, « Scène 1 » se répète d'un acte à l'autre : la scène
+// déplacée est retrouvée par sa place dans le texte.
+let movedAt: number | undefined;
+
 function summary(body: string): string {
   const words = body.split(/\s+/);
   return words.slice(0, 14).join(" ") + (words.length > 14 ? "…" : "");
@@ -1213,11 +1234,17 @@ function applyBoardOrder(moved?: Element) {
     chapter.scenes = [...column.querySelectorAll(".card")].map((card) => sceneOf.get(card)!);
     chapters.push(chapter);
   }
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: serializeDocument({ preamble: boardPreamble, chapters }) },
-  });
+  const serialized = serializeDocument({ preamble: boardPreamble, chapters });
+  // Une pièce est renumérotée après chaque déplacement.
+  const text = currentFormat === "theatre" ? renumberPlay(serialized) : serialized;
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
   const scene = moved && sceneOf.get(moved);
-  if (scene) movedHeading = scene.heading;
+  if (scene && currentFormat === "theatre") {
+    const at = sceneOffset(text, chapters.flatMap((chapter) => chapter.scenes).indexOf(scene));
+    movedAt = at >= 0 ? at : undefined;
+  } else if (scene) {
+    movedHeading = scene.heading;
+  }
 }
 
 function buildBoard() {
@@ -1228,15 +1255,22 @@ function buildBoard() {
 
   const text = view.state.doc.toString();
   const outline =
-    currentFormat === "scenario" ? parseScreenplay(text) : currentFormat === "nouvelle" ? parseNovella(text) : parseDocument(text);
+    currentFormat === "scenario"
+      ? parseScreenplay(text)
+      : currentFormat === "nouvelle"
+        ? parseNovella(text)
+        : currentFormat === "theatre"
+          ? parsePlay(text)
+          : parseDocument(text);
   boardPreamble = outline.preamble;
   for (const chapter of outline.chapters) {
     const column = document.createElement("div");
     column.className = "chapter";
     chapterOf.set(column, chapter);
     const heading = document.createElement("h2");
-    // Un scénario sans section n'a qu'une colonne, sans titre dans le texte.
-    heading.textContent = chapter.heading.replace(/^#\s*/, "") || "Scènes";
+    // Un scénario sans section n'a qu'une colonne, sans titre dans le texte ;
+    // dans une pièce, ce sont les scènes écrites avant le premier acte.
+    heading.textContent = chapter.heading.replace(/^#\s*/, "") || (currentFormat === "theatre" ? "Avant le premier acte" : "Scènes");
     heading.tabIndex = 0;
     heading.setAttribute("aria-roledescription", "chapitre déplaçable");
     heading.setAttribute("aria-describedby", "board-help");
@@ -1490,15 +1524,14 @@ function show(which: "home" | "text" | "board") {
   if (which === "board") board.querySelector<HTMLElement>(".chapter > h2")?.focus();
   if (which === "text") {
     view.focus();
-    if (movedHeading) {
-      const pos = view.state.doc.toString().indexOf(movedHeading);
-      movedHeading = undefined;
-      if (pos >= 0) {
-        view.dispatch({
-          selection: { anchor: pos },
-          effects: EditorView.scrollIntoView(pos, { y: "start" }),
-        });
-      }
+    const pos = movedAt ?? (movedHeading ? view.state.doc.toString().indexOf(movedHeading) : -1);
+    movedHeading = undefined;
+    movedAt = undefined;
+    if (pos >= 0) {
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "start" }),
+      });
     }
   }
 }
@@ -1630,6 +1663,7 @@ function forgetRecent(path: string) {
 // l'ancien texte.
 function loadDocument(text: string, path: string | undefined, format: Format, choice?: Choice) {
   movedHeading = undefined;
+  movedAt = undefined;
   // Le choix d'un fichier est celui que l'app a retenu ; un texte neuf apporte le sien.
   currentChoice = choice ?? (path ? knownChoice(choices, path) : NO_MODEL);
   currentSetup = path ? knownSetup(setups, path) : { ...DEFAULT_SETUP };
@@ -1668,10 +1702,12 @@ function confirmDiscard(title: string, confirmLabel: string, action: () => void)
 }
 
 // Un scénario neuf choisit d'abord son modèle ; « Annuler » ne crée rien.
+// Une pièce neuve commence par un acte et une scène, le curseur dessous.
 function requestNewDocument(format: Format) {
   const create = (choice: Choice) =>
     confirmDiscard("Nouveau texte", "Effacer et créer", () => {
-      loadDocument("", undefined, format, choice);
+      loadDocument(format === "theatre" ? NEW_PLAY : "", undefined, format, choice);
+      if (format === "theatre") view.dispatch({ selection: { anchor: view.state.doc.length } });
       setStatus(format === "scenario" && choice.model ? choiceMessage(choice, modelTarget.value) : "");
     });
   if (format === "scenario") askModel("Créer", NO_MODEL, create);
@@ -1814,30 +1850,62 @@ const btnExport = document.querySelector<HTMLButtonElement>("#btn-export")!;
 const exportDialog = document.querySelector<HTMLDialogElement>("#export-dialog")!;
 
 const exportNote = document.querySelector<HTMLParagraphElement>("#export-note")!;
-const exportPdfFont = document.querySelector<HTMLSpanElement>("#export-pdf-font")!;
+const exportFonts = exportDialog.querySelectorAll<HTMLSpanElement>(".export-font");
+const exportPlay = document.querySelector<HTMLFieldSetElement>("#export-play")!;
+let playExports = loadPlayExports();
+
+// Le format de page ne se choisit que pour l'édition.
+function syncPlayPage() {
+  const edition = exportDialog.querySelector<HTMLInputElement>('input[name="play-layout"]:checked')?.value === "edition";
+  for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="play-page"]')) {
+    radio.disabled = !edition;
+    radio.parentElement!.classList.toggle("disabled", !edition);
+  }
+}
+
+for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="play-layout"]')) radio.addEventListener("change", syncPlayPage);
+
+// Mise en page et format de page choisis dans la boîte d'export.
+function chosenPlayExport(): { layout: PlayLayout; page: PlayPage } {
+  const data = new FormData(exportDialog.querySelector("form")!);
+  return { layout: data.get("play-layout") === "edition" ? "edition" : "manuscrit", page: data.get("play-page") === "a5" ? "a5" : "a4" };
+}
+
+// Formats d'une pièce qui suivent sa mise en page.
+const PLAY_FORMATS = new Set(["pdf", "docx", "odt"]);
 
 btnExport.addEventListener("click", () => {
   // Un scénario s'exporte en PDF et en Fountain ; les autres formats de
   // texte, dans tous les formats d'export sauf ceux du scénario.
   const scenario = currentFormat === "scenario";
+  const theatre = currentFormat === "theatre";
   let first: HTMLInputElement | undefined;
   for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="format"]')) {
     const forScenario = radio.value === "fountain" || radio.value === "fdx";
-    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario);
+    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario) || (theatre && radio.value === "epub");
     radio.parentElement!.classList.toggle("disabled", radio.disabled);
     if (!radio.disabled) first ??= radio;
   }
   const checked = exportDialog.querySelector<HTMLInputElement>('input[name="format"]:checked');
   if (first && (!checked || checked.disabled)) first.checked = true;
   exportNote.hidden = !scenario;
-  exportPdfFont.textContent = scenario ? "en Courier Prime" : "en Literata";
+  for (const font of exportFonts) font.textContent = scenario && font === exportFonts[0] ? "en Courier Prime" : theatre ? "selon la mise en page" : "en Literata";
+  // Une pièce : sa mise en page et son format de page, retenus pour chaque fichier.
+  exportPlay.hidden = !theatre;
+  if (theatre) {
+    const known = knownPlayExport(playExports, currentPath);
+    for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="play-layout"], input[name="play-page"]')) {
+      radio.checked = radio.value === known.layout || radio.value === known.page;
+    }
+    syncPlayPage();
+  }
   exportDialog.returnValue = "cancel";
   exportDialog.showModal();
 });
 
 // Le nom proposé pour un export : celui du fichier, sans son extension.
 function exportName(): string {
-  return currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? importName ?? (currentFormat === "scenario" ? "scenario" : "roman");
+  return currentPath?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? importName ?? (currentFormat === "scenario" ? "scenario" : currentFormat === "theatre" ? "piece" : "roman");
 }
 
 // Texte d'un export Fountain : le scénario, précédé de la page de titre tirée
@@ -1890,6 +1958,17 @@ exportDialog.addEventListener("close", async () => {
   setStatus(`Export ${FORMATS[format]} en cours…`);
   const start = performance.now();
   try {
+    if (currentFormat === "theatre" && PLAY_FORMATS.has(format)) {
+      const choice = chosenPlayExport();
+      if (currentPath) {
+        playExports = withPlayExport(playExports, currentPath, choice);
+        savePlayExports(playExports);
+      }
+      const markdown = playToPandoc(view.state.doc.toString(), choice.layout);
+      await invoke("export_play", { path, format, markdown, model: playModel(choice.layout, choice.page) });
+      setStatus(`Exporté en ${((performance.now() - start) / 1000).toFixed(1)} s : ${path}`);
+      return;
+    }
     if (format === "pdf" && currentFormat === "scenario") {
       setStatus(await exportScreenplayPdf(path));
       return;
@@ -2360,6 +2439,14 @@ function formatOrdinals() {
   setStatus(ordinalsMessage(changes.length));
 }
 
+// Théâtre > Renuméroter les actes et les scènes : en une seule modification,
+// que Ctrl+Z annule.
+function renumberActsAndScenes() {
+  const changes = renumberChanges(view.state.doc.toString());
+  if (changes.length) view.dispatch({ changes, userEvent: "input.replace.all" });
+  setStatus(renumberMessage(changes.length));
+}
+
 function goToNextRemark(direction: 1 | -1) {
   if (!goToRemark(view, direction)) setCorrectionStatus("Aucune remarque affichée : lance d'abord la vérification (F7).");
 }
@@ -2595,6 +2682,7 @@ const ACTIONS: Record<string, () => void> = {
   "correction-dictionaries": openDictionaries,
   "scenario-cover": openCover,
   "scenario-model": chooseModel,
+  "theatre-renumber": renumberActsAndScenes,
   "help-about": openAbout,
 };
 
@@ -2638,6 +2726,14 @@ function runAction(id: string) {
   }
   if (id === "scenario-model" && currentFormat !== "scenario") {
     setStatus("Les modèles sont propres au format scénario.");
+    return;
+  }
+  if (id === "theatre-renumber" && currentFormat !== "theatre") {
+    setStatus("La renumérotation est propre au format théâtre.");
+    return;
+  }
+  if (id === "theatre-renumber" && viewText.hidden) {
+    setStatus("La renumérotation agit sur le texte : affiche d'abord la vue Texte.");
     return;
   }
   if (id === "file-layout" && currentFormat !== "vanilla") {

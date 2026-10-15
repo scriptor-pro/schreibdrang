@@ -733,6 +733,19 @@ dialog label.disabled {
   color: var(--muted);
 }
 
+/* Un cadre masqué le reste, malgré son affichage en flex. */
+dialog fieldset[hidden] {
+  display: none;
+}
+
+/* Explication d'un choix, sous son libellé. */
+dialog label small {
+  display: block;
+  margin-left: 1.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 dialog input[type="radio"],
 dialog input[type="checkbox"] {
   accent-color: var(--accent);

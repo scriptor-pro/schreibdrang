@@ -35,7 +35,7 @@
             <li><button type="button" class="format" id="format-roman" data-format="roman" data-icon="book-open"><strong>Roman</strong> <small>parties, chapitres, scènes</small></button></li>
             <li><button type="button" class="format" id="format-nouvelle" data-format="nouvelle" data-icon="book"><strong>Nouvelle</strong> <small>scènes, sans chapitres</small></button></li>
             <li><button type="button" class="format" id="format-scenario" data-format="scenario" data-icon="clapperboard"><strong>Scénario</strong> <small>format Fountain</small></button></li>
-            <li><button type="button" class="format" disabled data-icon="drama"><strong>Théâtre</strong> <small>actes et scènes</small> <em>Bientôt disponible</em></button></li>
+            <li><button type="button" class="format" id="format-theatre" data-format="theatre" data-icon="drama"><strong>Théâtre</strong> <small>actes et scènes</small></button></li>
             <li><button type="button" class="format" id="format-vanilla" data-format="vanilla" data-icon="file"><strong>Vanilla</strong> <small>texte libre, d'un seul tenant</small></button></li>
           </ul>
 
@@ -73,14 +73,22 @@
         <h2 id="export-title">Exporter le texte</h2>
         <fieldset>
           <legend>Format</legend>
-          <label><input type="radio" name="format" value="pdf" checked /> PDF (.pdf), <span id="export-pdf-font">en Literata</span></label>
-          <label><input type="radio" name="format" value="docx" /> Word (.docx), en Literata</label>
-          <label><input type="radio" name="format" value="odt" /> OpenDocument (.odt), en Literata</label>
+          <label><input type="radio" name="format" value="pdf" checked /> PDF (.pdf), <span class="export-font">en Literata</span></label>
+          <label><input type="radio" name="format" value="docx" /> Word (.docx), <span class="export-font">en Literata</span></label>
+          <label><input type="radio" name="format" value="odt" /> OpenDocument (.odt), <span class="export-font">en Literata</span></label>
           <label><input type="radio" name="format" value="epub" /> EPUB (.epub), pour liseuse</label>
           <label><input type="radio" name="format" value="md" /> Markdown (.md)</label>
           <label><input type="radio" name="format" value="txt" /> Texte brut (.txt)</label>
           <label class="disabled"><input type="radio" name="format" value="fountain" disabled /> Fountain (.fountain), réservé au format scénario</label>
           <label class="disabled"><input type="radio" name="format" value="fdx" disabled /> Final Draft (.fdx), bientôt disponible</label>
+        </fieldset>
+        <fieldset id="export-play" hidden>
+          <legend>Mise en page de la pièce</legend>
+          <label><input type="radio" name="play-layout" value="manuscrit" checked /> Manuscrit <small>Pour envoyer ta pièce à un théâtre, à un comité de lecture ou à un metteur en scène, ou pour les répétitions. Courier Prime, page aérée, facile à annoter.</small></label>
+          <label><input type="radio" name="play-layout" value="edition" /> Édition <small>L'apparence d'une pièce publiée, prête à lire ou à diffuser. EB Garamond, noms en petites capitales, plus dense.</small></label>
+          <p class="label">Format de page de l'édition</p>
+          <label><input type="radio" name="play-page" value="a4" checked /> A4, corps 12 <small>Une page de la taille d'une feuille ordinaire, à imprimer chez soi.</small></label>
+          <label><input type="radio" name="play-page" value="a5" /> A5, corps 11 <small>Le format d'un livre de théâtre, proche des éditions imprimées.</small></label>
         </fieldset>
         <p id="export-note" hidden>Au format scénario, le PDF suit la mise en page standard et l'export commence par la page de titre, tirée de la page de couverture.</p>
         <div class="actions">
