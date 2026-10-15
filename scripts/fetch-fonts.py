@@ -9,6 +9,9 @@
 - Literata (export) : fonts.bunny.net ne fournit que des woff2 découpés par
   jeu de caractères ; ils sont convertis et fusionnés en un fichier TrueType
   par style dans src-tauri/resources/fonts/, lisible par le moteur PDF.
+- EB Garamond (export « Édition » d'une pièce) : comme Literata, un TrueType
+  par style dans src-tauri/resources/fonts/. Les fichiers de fonts.bunny.net
+  n'ont pas de petites capitales.
 
 Les polices sont embarquées dans l'app : rien n'est téléchargé à l'exécution.
 """
@@ -45,7 +48,7 @@ def download(family: str, subset: str, weight: str, style: str) -> bytes:
 
 
 def main() -> None:
-    wanted = set(sys.argv[1:]) or {"courier-prime", "literata", "jost"}
+    wanted = set(sys.argv[1:]) or {"courier-prime", "literata", "jost", "eb-garamond"}
     for directory in (WEB_DIR, EXPORT_DIR, TMP_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -85,18 +88,20 @@ def main() -> None:
             merged.save(target)
             print("export ", target.name, f"({len(merged.getBestCmap())} caractères)")
 
-    # Literata : un TrueType par style, pour l'export.
-    if "literata" in wanted:
+    # Literata et EB Garamond : un TrueType par style, pour l'export.
+    for family, prefix in (("literata", "Literata"), ("eb-garamond", "EBGaramond")):
+        if family not in wanted:
+            continue
         for weight, style, label in STYLES:
             parts = []
             for subset in SUBSETS:
-                font = TTFont(io.BytesIO(download("literata", subset, weight, style)))
+                font = TTFont(io.BytesIO(download(family, subset, weight, style)))
                 font.flavor = None
-                path = TMP_DIR / f"literata-{subset}-{weight}-{style}.ttf"
+                path = TMP_DIR / f"{family}-{subset}-{weight}-{style}.ttf"
                 font.save(path)
                 parts.append(str(path))
             merged = Merger().merge(parts)
-            target = EXPORT_DIR / f"Literata-{label}.ttf"
+            target = EXPORT_DIR / f"{prefix}-{label}.ttf"
             merged.save(target)
             print("export ", target.name, f"({len(merged.getBestCmap())} caractères)")
 
