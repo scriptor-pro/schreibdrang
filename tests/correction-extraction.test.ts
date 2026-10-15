@@ -88,3 +88,17 @@ test("un paragraphe est copié par blocs, pas caractère par caractère, pour ne
   assert.equal(marked.starts.length, 3);
   assert.equal(lines.starts.length, 3);
 });
+
+test("théâtre : la liste des personnages, les répliques et les didascalies sont relues, pas les titres ni les noms", () => {
+  const doc = [
+    "PERSONNAGES", "", "CLAIRE, trente ans, sa sœur.", "", "# ACTE I", "", "## Scène 1", "", "(Un salon.)", "",
+    "CLAIRE", "Tu rentres", "*tard*.", "(Elle rit.)", "Enfin.",
+  ].join("\n");
+  assert.deepEqual(extractPassages(doc, "theatre").map((p) => p.text), [
+    "CLAIRE, trente ans, sa sœur.",
+    "(Un salon.)",
+    "Tu rentres tard.",
+    "(Elle rit.)",
+    "Enfin.",
+  ]);
+});

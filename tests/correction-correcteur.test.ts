@@ -18,7 +18,7 @@ const MAISON: EngineReply = {
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 interface Options {
-  format?: "roman" | "scenario";
+  format?: "roman" | "scenario" | "theatre";
   // Vrai : chaque relecture attend qu'on la libère, par release().
   slow?: boolean;
   failing?: boolean;
@@ -240,4 +240,13 @@ test("sans la case Vérifier pendant la frappe, rien n'est relu en écrivant", a
   t.mock.timers.tick(5000);
   await flush();
   assert.deepEqual(s.asked, []);
+});
+
+test("théâtre : les noms des personnages sont acceptés par l'orthographe", async () => {
+  const doc = "# ACTE I\n\n## Scène 1\n\nMARC\nBonjour.\n\nMarc sourit.";
+  const s = setup(doc, { "Marc sourit.": { grammar: [], spelling: [{ start: 0, end: 4, word: "Marc" }] } }, { format: "theatre" });
+  await s.corrector.check();
+  assert.deepEqual(s.remarks(), []);
+  assert.ok(!s.asked.includes("MARC"));
+  assert.ok(!s.asked.includes("ACTE I"));
 });

@@ -71,3 +71,7 @@ test("des choix illisibles donnent une liste vide, un choix invalide est ramené
     { "/a.fountain": { model: "truby", target: 90 }, "/b.fountain": { model: "", target: 9 }, "/c.fountain": { model: "", target: 110 } },
   );
 });
+
+test("le format théâtre est retenu pour un fichier", () => {
+  assert.deepEqual(normalizeTexts({ "/piece.md": "theatre" }), { "/piece.md": "theatre" });
+});

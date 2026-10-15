@@ -7,6 +7,8 @@
 import { classifyLines } from "../fountain.ts";
 import type { LineKind } from "../fountain.ts";
 import type { Format } from "../recents.ts";
+import { classifyPlay } from "../theatre.ts";
+import type { PlayLine } from "../theatre.ts";
 
 // Un passage, relu d'un seul tenant : un paragraphe, un titre, une réplique,
 // une didascalie. `from` et `to` le situent dans le document. Le texte relu
@@ -32,6 +34,10 @@ interface Line {
 // Natures de ligne relues dans un scénario. Les intitulés de scène, les noms
 // des personnages, les transitions, la page de titre ne le sont pas.
 const SCREENPLAY_READ: ReadonlySet<LineKind> = new Set<LineKind>(["action", "dialogue", "parenthetical"]);
+
+// Natures de ligne relues dans une pièce. Les titres d'actes et de scènes,
+// les noms des personnages et le titre de la liste ne le sont pas.
+const PLAY_READ: ReadonlySet<PlayLine> = new Set<PlayLine>(["cast", "dialogue", "stage", "text"]);
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const HEADING = /^#{1,6}(?:[ \t]+|$)/;
@@ -121,6 +127,18 @@ export function extractPassages(doc: string, format: Format): Passage[] {
       // « ! » force une action ; il ne s'imprime pas.
       const skip = kind === "action" && line.trimStart().startsWith("!") ? line.indexOf("!") + 1 : 0;
       group.push(lineAt(index, skip));
+    });
+  } else if (format === "theatre") {
+    // Les lignes d'une même réplique, ou d'un même paragraphe de texte,
+    // forment un passage ; une didascalie et une entrée de la liste sont
+    // relues seules.
+    const kinds = classifyPlay(raw);
+    let previous: PlayLine | undefined;
+    raw.forEach((_, index) => {
+      const kind = kinds[index];
+      if (kind !== previous || (kind !== "dialogue" && kind !== "text")) flush();
+      previous = kind;
+      if (PLAY_READ.has(kind)) group.push(lineAt(index));
     });
   } else {
     // Roman, nouvelle, vanilla : un titre est relu seul, sans ses « # » ; un

@@ -6,6 +6,7 @@
 
 import type { EditorState, Text, TransactionSpec } from "@codemirror/state";
 import { characterNames, extractPassages } from "./extraction.ts";
+import { playCharacterNames } from "../theatre.ts";
 import type { Passage } from "./extraction.ts";
 import { remarksOf, wordAcceptor } from "./remarques.ts";
 import type { EngineReply, Remark, RemarkFilter } from "./remarques.ts";
@@ -224,7 +225,9 @@ export class Corrector {
     const settings = this.#host.settings();
     const personal = this.#host.personal();
     const text = this.#host.textData();
-    const names = this.#host.format() === "scenario" ? characterNames(state.doc.toString()) : [];
+    const format = this.#host.format();
+    const names =
+      format === "scenario" ? characterNames(state.doc.toString()) : format === "theatre" ? playCharacterNames(state.doc.toString()) : [];
     return {
       kinds: { grammaire: settings.grammar, orthographe: settings.spelling, typographie: settings.typography },
       ignoredRules: new Set(personal.rules.map((rule) => rule.rule)),

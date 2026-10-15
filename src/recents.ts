@@ -2,9 +2,9 @@
 // local. Ce module n'accède à la page que dans loadRecents et saveRecents.
 
 // Formats de texte disponibles dans le prototype.
-export type Format = "roman" | "nouvelle" | "vanilla" | "scenario";
+export type Format = "roman" | "nouvelle" | "vanilla" | "scenario" | "theatre";
 
-export const FORMATS: Format[] = ["roman", "nouvelle", "vanilla", "scenario"];
+export const FORMATS: Format[] = ["roman", "nouvelle", "vanilla", "scenario", "theatre"];
 
 export interface Recent {
   path: string;

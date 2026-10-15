@@ -73,3 +73,8 @@ test("un fichier .fountain inconnu est un scénario", () => {
   assert.equal(formatOf([], "/Film.FOUNTAIN"), "scenario");
   assert.equal(formatOf(addRecent([], "/film.fountain", "vanilla", now), "/film.fountain"), "vanilla");
 });
+
+test("une pièce de théâtre garde son format", () => {
+  const [recent] = normalizeRecents([{ path: "/piece.md", date: "2026-10-15T10:00:00.000Z", format: "theatre" }]);
+  assert.equal(recent.format, "theatre");
+});

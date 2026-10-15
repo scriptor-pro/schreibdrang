@@ -3,7 +3,7 @@
 
 import type { Format, Recent } from "./recents";
 
-export const FORMAT_NAMES: Record<Format, string> = { roman: "roman", nouvelle: "nouvelle", vanilla: "vanilla", scenario: "scénario" };
+export const FORMAT_NAMES: Record<Format, string> = { roman: "roman", nouvelle: "nouvelle", vanilla: "vanilla", scenario: "scénario", theatre: "théâtre" };
 
 export const recentsList = document.querySelector<HTMLUListElement>("#recents")!;
 const recentsEmpty = document.querySelector<HTMLParagraphElement>("#recents-empty")!;
