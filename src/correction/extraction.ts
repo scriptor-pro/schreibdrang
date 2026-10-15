@@ -9,13 +9,16 @@ import type { LineKind } from "../fountain.ts";
 import type { Format } from "../recents.ts";
 
 // Un passage, relu d'un seul tenant : un paragraphe, un titre, une réplique,
-// une didascalie. `from` et `to` le situent dans le document ; `positions[i]`
-// est la place dans le document du caractère `text[i]`.
+// une didascalie. `from` et `to` le situent dans le document. Le texte relu
+// est fait de tronçons copiés du document : `starts[k]` est la place dans
+// `text` du tronçon k, `places[k]` celle de son premier caractère dans le
+// document (voir toDocument).
 export interface Passage {
   from: number;
   to: number;
   text: string;
-  positions: number[];
+  starts: number[];
+  places: number[];
 }
 
 // Une ligne à relire : son texte, sans ce qui la précède et ne s'imprime pas,
@@ -32,34 +35,54 @@ const SCREENPLAY_READ: ReadonlySet<LineKind> = new Set<LineKind>(["action", "dia
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const HEADING = /^#{1,6}(?:[ \t]+|$)/;
+const MARK = /[*_]/g;
+
+// Le texte d'un passage en construction, tronçon par tronçon.
+interface Builder {
+  parts: string[];
+  length: number;
+  starts: number[];
+  places: number[];
+}
+
+function pushPiece(builder: Builder, piece: string, place: number) {
+  if (!piece) return;
+  builder.parts.push(piece);
+  builder.starts.push(builder.length);
+  builder.places.push(place);
+  builder.length += piece.length;
+}
 
 // Ajoute une ligne au passage, sans ses marques : toute étoile, et tout « _ »
-// qui n'est pas entre deux lettres ou chiffres (« mot_clé » le garde).
-function pushLine(text: string[], positions: number[], line: Line) {
-  for (let i = 0; i < line.text.length; i += 1) {
-    const char = line.text[i];
-    if (char === "*") continue;
-    if (char === "_" && !(WORD_CHAR.test(line.text[i - 1] ?? "") && WORD_CHAR.test(line.text[i + 1] ?? ""))) continue;
-    text.push(char);
-    positions.push(line.from + i);
+// qui n'est pas entre deux lettres ou chiffres (« mot_clé » le garde). Une
+// ligne sans marque, le cas courant, est copiée d'un bloc.
+function pushLine(builder: Builder, line: Line) {
+  const text = line.text;
+  if (!text.includes("*") && !text.includes("_")) {
+    pushPiece(builder, text, line.from);
+    return;
   }
+  let pieceStart = 0;
+  for (const match of text.matchAll(MARK)) {
+    const i = match.index;
+    if (match[0] === "_" && WORD_CHAR.test(text[i - 1] ?? "") && WORD_CHAR.test(text[i + 1] ?? "")) continue;
+    pushPiece(builder, text.slice(pieceStart, i), line.from + pieceStart);
+    pieceStart = i + 1;
+  }
+  pushPiece(builder, text.slice(pieceStart), line.from + pieceStart);
 }
 
 // Les lignes d'un même passage sont jointes par une espace, placée sur le
 // retour à la ligne qui les sépare. Un passage sans lettre n'est pas gardé.
 function makePassage(lines: Line[]): Passage | undefined {
-  const text: string[] = [];
-  const positions: number[] = [];
+  const builder: Builder = { parts: [], length: 0, starts: [], places: [] };
   lines.forEach((line, index) => {
-    if (index > 0) {
-      text.push(" ");
-      positions.push(lines[index - 1].end);
-    }
-    pushLine(text, positions, line);
+    if (index > 0) pushPiece(builder, " ", lines[index - 1].end);
+    pushLine(builder, line);
   });
-  const joined = text.join("");
-  if (!joined.trim()) return undefined;
-  return { from: lines[0].from, to: lines[lines.length - 1].end, text: joined, positions };
+  const text = builder.parts.join("");
+  if (!text.trim()) return undefined;
+  return { from: lines[0].from, to: lines[lines.length - 1].end, text, starts: builder.starts, places: builder.places };
 }
 
 export function extractPassages(doc: string, format: Format): Passage[] {
@@ -121,11 +144,24 @@ export function extractPassages(doc: string, format: Format): Passage[] {
   return passages;
 }
 
+// La place dans le document du caractère `text[index]` du passage.
+function placeOf(passage: Passage, index: number): number {
+  const { starts, places } = passage;
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (starts[middle] <= index) low = middle;
+    else high = middle - 1;
+  }
+  return places[low] + index - starts[low];
+}
+
 // La place dans le document de ce que le moteur a relevé entre `start` et
 // `end` (exclu) dans le texte du passage.
 export function toDocument(passage: Passage, start: number, end: number): { from: number; to: number } {
-  const from = passage.positions[start] ?? passage.to;
-  const to = end > start ? passage.positions[end - 1] + 1 : from;
+  const from = start < passage.text.length ? placeOf(passage, start) : passage.to;
+  const to = end > start ? placeOf(passage, end - 1) + 1 : from;
   return { from, to };
 }
 

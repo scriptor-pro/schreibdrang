@@ -4,7 +4,7 @@
 // par son texte, tant que l'app est ouverte, et affiche les remarques des
 // passages relus depuis la dernière fois qu'elles ont été effacées.
 
-import type { EditorState, TransactionSpec } from "@codemirror/state";
+import type { EditorState, Text, TransactionSpec } from "@codemirror/state";
 import { characterNames, extractPassages } from "./extraction.ts";
 import type { Passage } from "./extraction.ts";
 import { remarksOf, wordAcceptor } from "./remarques.ts";
@@ -54,6 +54,9 @@ export class Corrector {
   #count = 0;
   #renderTimer: ReturnType<typeof setTimeout> | undefined;
   #typingTimer: ReturnType<typeof setTimeout> | undefined;
+  // Les passages du dernier texte découpé : tant que le texte et son format
+  // ne changent pas, il n'est pas découpé à nouveau.
+  #extracted: { doc: Text; format: Format; passages: Passage[] } | undefined;
 
   constructor(host: CorrectorHost) {
     this.#host = host;
@@ -68,7 +71,7 @@ export class Corrector {
     this.#run += 1;
     const run = this.#run;
     const { state, viewport } = this.#host.view;
-    const passages = extractPassages(state.doc.toString(), this.#host.format());
+    const passages = this.#passages(state);
     const selection = state.selection.main;
     const chosen = selection.empty ? readingOrder(passages, viewport.from, viewport.to) : passagesIn(passages, selection.from, selection.to);
     // Un passage déjà relu est affiché tout de suite ; un texte présent deux
@@ -164,7 +167,7 @@ export class Corrector {
     const run = this.#run;
     const state = this.#host.view.state;
     const head = state.selection.main.head;
-    const passage = extractPassages(state.doc.toString(), this.#host.format()).find((p) => p.from <= head && head <= p.to);
+    const passage = this.#passages(state).find((p) => p.from <= head && head <= p.to);
     if (!passage) return;
     if (!this.#replies.has(passage.text)) {
       const engine = await this.#start();
@@ -182,6 +185,15 @@ export class Corrector {
     this.#shown.add(passage.text);
     this.#render();
     if (!this.#running) this.#showCount();
+  }
+
+  #passages(state: EditorState): Passage[] {
+    const format = this.#host.format();
+    const cached = this.#extracted;
+    if (cached && cached.doc === state.doc && cached.format === format) return cached.passages;
+    const passages = extractPassages(state.doc.toString(), format);
+    this.#extracted = { doc: state.doc, format, passages };
+    return passages;
   }
 
   // Le moteur n'est créé qu'à la première vérification.
@@ -208,11 +220,11 @@ export class Corrector {
     this.#host.status(START_FAILED, true);
   }
 
-  #filter(doc: string): RemarkFilter {
+  #filter(state: EditorState): RemarkFilter {
     const settings = this.#host.settings();
     const personal = this.#host.personal();
     const text = this.#host.textData();
-    const names = this.#host.format() === "scenario" ? characterNames(doc) : [];
+    const names = this.#host.format() === "scenario" ? characterNames(state.doc.toString()) : [];
     return {
       kinds: { grammaire: settings.grammar, orthographe: settings.spelling, typographie: settings.typography },
       ignoredRules: new Set(personal.rules.map((rule) => rule.rule)),
@@ -229,9 +241,8 @@ export class Corrector {
     const view = this.#host.view;
     const remarks: Remark[] = [];
     if (this.#shown.size) {
-      const doc = view.state.doc.toString();
-      const filter = this.#filter(doc);
-      for (const passage of extractPassages(doc, this.#host.format())) {
+      const filter = this.#filter(view.state);
+      for (const passage of this.#passages(view.state)) {
         const reply = this.#shown.has(passage.text) ? this.#replies.get(passage.text) : undefined;
         if (reply) remarks.push(...remarksOf(passage, reply, filter));
       }

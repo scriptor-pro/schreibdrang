@@ -67,7 +67,7 @@ test("scénario : l'action, les didascalies et les répliques sont relues, pas l
   const passages = extractPassages(doc, "scenario");
   assert.deepEqual(passages.map((p) => p.text), ["Élise entre, lentement.", "(souriant)", "Les maison sont grande.", "SALUT, dit-il."]);
   // Le « ! » qui force l'action ne s'imprime pas : il n'est pas relu.
-  assert.equal(passages[3].positions[0], doc.indexOf("SALUT"));
+  assert.equal(toDocument(passages[3], 0, 1).from, doc.indexOf("SALUT"));
 });
 
 test("scénario : une réplique sur deux lignes est un seul passage", () => {
@@ -78,4 +78,16 @@ test("scénario : une réplique sur deux lignes est un seul passage", () => {
 test("les noms des personnages qui parlent, entiers et mot par mot", () => {
   const doc = "ÉLISE (V.O.)\nBonjour.\n\nJEAN-PIERRE\nSalut.\n\n@McDonald\nOui.\n\nIl entre.";
   assert.deepEqual(characterNames(doc), new Set(["ÉLISE", "JEAN-PIERRE", "JEAN", "PIERRE", "MCDONALD"]));
+});
+
+test("un texte de la taille d'un roman est découpé assez vite pour ne pas gêner la frappe", () => {
+  const paragraph = "Elle connaissait par cœur le trajet jusqu'à la gare : trois cent *quarante* pas jusqu'au pont, puis la côte, puis l'escalier aux marches inégales.";
+  const doc = Array.from({ length: 1651 }, (_, i) => (i % 40 === 0 ? `## Scène ${i}` : `${paragraph} ${i}`)).join("\n\n");
+  let best = Infinity;
+  for (let run = 0; run < 5; run += 1) {
+    const start = performance.now();
+    extractPassages(doc, "roman");
+    best = Math.min(best, performance.now() - start);
+  }
+  assert.ok(best < 50, `${best.toFixed(1)} ms`);
 });
