@@ -43,6 +43,24 @@ import type { PageSetup } from "./miseenpage";
 import { pageAt, paginate, printedPages, printedStyles, sheets } from "./pagination";
 import type { PageBreak } from "./pagination";
 import type { Author, AuthorField, Cover, Missing } from "./cover";
+import { correctionExtension, goToRemark } from "./correction/editeur";
+import type { CorrectionActions } from "./correction/editeur";
+import { Corrector } from "./correction/correcteur";
+import { Engine } from "./correction/moteur";
+import {
+  emptyTextData,
+  knownTextData,
+  loadPersonal,
+  loadTextsData,
+  savePersonal,
+  saveTextsData,
+  withItem,
+  withoutItem,
+  withoutRule,
+  withRule,
+  withTextData,
+} from "./correction/dictionnaires";
+import type { TextData } from "./correction/dictionnaires";
 
 // Les réglages ont déjà été appliqués par main.ts.
 let settings: Settings = loadSettings();
@@ -936,6 +954,65 @@ const SEARCH_PHRASES = {
 // Le repère des espaces insécables s'affiche ou se masque sans recréer l'éditeur.
 const nbspMarks = new Compartment();
 
+// ---------------------------------------------------------------------------
+// Correction : Grammalecte, à la demande (F7) ou pendant la frappe
+// ---------------------------------------------------------------------------
+
+// Pour tous les textes : le dictionnaire personnel et les règles coupées.
+// Pour le texte affiché : son dictionnaire et ses remarques ignorées,
+// retenus par son chemin dès qu'il en a un.
+let personal = loadPersonal();
+let textsData = loadTextsData();
+let currentTextData: TextData = emptyTextData();
+
+function rememberTextData() {
+  if (!currentPath) return;
+  textsData = withTextData(textsData, currentPath, currentTextData);
+  saveTextsData(textsData);
+}
+
+const CORRECTION_ITEMS = [
+  "correction-check",
+  "correction-next",
+  "correction-previous",
+  "correction-clear",
+  "correction-typing",
+  "correction-dictionaries",
+];
+
+const correctionStatus = document.querySelector<HTMLSpanElement>("#correction-status")!;
+
+// Pied de page de la correction : avancement, nombre de remarques ou erreur.
+function setCorrectionStatus(message: string, error = false) {
+  correctionStatus.textContent = error ? `Erreur : ${message}` : message;
+  correctionStatus.classList.toggle("error", error);
+}
+
+const correctionActions: CorrectionActions = {
+  suggest: (word) => corrector.suggest(word),
+  stop: () => corrector.stop(),
+  ignore(remark) {
+    currentTextData = { ...currentTextData, ignored: withItem(currentTextData.ignored, remark.key) };
+    rememberTextData();
+    corrector.refresh();
+  },
+  ignoreRule(remark) {
+    personal = { ...personal, rules: withRule(personal.rules, { rule: remark.rule, label: remark.label }) };
+    savePersonal(personal);
+    corrector.refresh();
+  },
+  addToText(word) {
+    currentTextData = { ...currentTextData, words: withItem(currentTextData.words, word) };
+    rememberTextData();
+    corrector.refresh();
+  },
+  addToPersonal(word) {
+    personal = { ...personal, words: withItem(personal.words, word) };
+    savePersonal(personal);
+    corrector.refresh();
+  },
+};
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
@@ -1040,6 +1117,7 @@ function createState(doc: string): EditorState {
         },
       }),
       nbspMarks.of(settings.nbsp ? showNbsp : []),
+      correctionExtension(correctionActions),
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
         keydown() {
@@ -1052,6 +1130,7 @@ function createState(doc: string): EditorState {
           if (!dirty) setDirty(true);
           recordLatency();
           scheduleCounts(update.view);
+          corrector.typed();
         } else if (update.selectionSet && (currentFormat === "scenario" || currentFormat === "vanilla")) {
           // Le numéro de la page ou du feuillet en cours suit le curseur.
           scheduleCounts(update.view);
@@ -1064,6 +1143,17 @@ function createState(doc: string): EditorState {
 const view = new EditorView({
   parent: document.querySelector<HTMLDivElement>("#editor")!,
   state: createState(""),
+});
+
+const corrector = new Corrector({
+  view,
+  format: () => currentFormat,
+  settings: () => settings,
+  personal: () => personal,
+  textData: () => currentTextData,
+  status: setCorrectionStatus,
+  // Le worker n'est créé qu'à la première vérification.
+  createEngine: () => new Engine(() => new Worker("/correction/worker.js")),
 });
 
 scheduleCounts(view);
@@ -1361,6 +1451,12 @@ function show(which: "home" | "text" | "board") {
   document.body.dataset.regime = which === "text" ? "ecriture" : "affiche";
   btnText.classList.toggle("active", which === "text");
   btnBoard.classList.toggle("active", which === "board");
+  // La correction n'agit que sur la vue Texte.
+  for (const id of CORRECTION_ITEMS) {
+    invoke("set_menu_item_enabled", { id, enabled: which === "text" }).catch((error) => {
+      setStatus(`le menu Correction n'a pas pu être mis à jour (${error})`, true);
+    });
+  }
   for (const button of [btnSave, btnSaveAs, btnExport]) button.disabled = nothingToSave();
   if (which !== "text") view.contentDOM.blur();
   // Le focus clavier arrive sur l'action principale de l'accueil, ou sur le
@@ -1422,6 +1518,12 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "F11") {
     event.preventDefault();
     runAction("view-fullscreen");
+  } else if (event.key === "F7" && !event.shiftKey && !event.ctrlKey) {
+    event.preventDefault();
+    runAction("correction-check");
+  } else if (event.key === "F8" && !event.ctrlKey) {
+    event.preventDefault();
+    runAction(event.shiftKey ? "correction-previous" : "correction-next");
   } else if (event.key === "Escape" && !event.defaultPrevented && document.body.classList.contains("fullscreen")) {
     // Échap a déjà servi s'il vient de fermer le panneau de recherche.
     setFullscreen(false);
@@ -1506,6 +1608,9 @@ function loadDocument(text: string, path: string | undefined, format: Format, ch
   // Le choix d'un fichier est celui que l'app a retenu ; un texte neuf apporte le sien.
   currentChoice = choice ?? (path ? knownChoice(choices, path) : NO_MODEL);
   currentSetup = path ? knownSetup(setups, path) : { ...DEFAULT_SETUP };
+  // Les remarques du texte précédent disparaissent avec lui.
+  corrector.clear();
+  currentTextData = path ? knownTextData(textsData, path) : emptyTextData();
   setFormat(format);
   ({ title: coverTitle, source: coverSource } = loadCover(path));
   show("text");
@@ -1623,6 +1728,8 @@ async function writeDocument(path: string) {
     rememberChoice(path);
     // De même pour la mise en page d'un texte vanilla.
     rememberSetup(path);
+    // De même pour le dictionnaire et les remarques ignorées du texte.
+    rememberTextData();
     setDirty(view.state.doc.toString() !== text);
     const now = new Date();
     setStatus(savedMessage(now, now, path));
@@ -2000,11 +2107,63 @@ function fillFontSelect(fonts: string[]) {
   fontSelect.value = settings.font;
 }
 
+const CORRECTION_SETTINGS = ["checkWhileTyping", "grammar", "spelling", "typography"] as const;
+const rulesList = document.querySelector<HTMLUListElement>("#setting-rules")!;
+
+// Une liste de la correction : chaque entrée a son bouton. Après un retrait,
+// le focus passe au bouton suivant, ou à « Fermer » s'il n'en reste aucun.
+function renderEntries(list: HTMLUListElement, entries: { label: string; action: () => void }[], buttonLabel: string, empty: string) {
+  if (!entries.length) {
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = empty;
+    list.replaceChildren(item);
+    return;
+  }
+  list.replaceChildren(
+    ...entries.map(({ label, action }) => {
+      const item = document.createElement("li");
+      const text = document.createElement("span");
+      text.textContent = label;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = buttonLabel;
+      button.addEventListener("click", () => {
+        action();
+        (list.querySelector<HTMLButtonElement>("button") ?? list.closest("form")?.querySelector<HTMLButtonElement>("button.primary"))?.focus();
+      });
+      item.append(text, button);
+      return item;
+    }),
+  );
+}
+
+function renderIgnoredRules() {
+  renderEntries(
+    rulesList,
+    personal.rules.map((rule) => ({
+      label: rule.label,
+      action: () => {
+        personal = { ...personal, rules: withoutRule(personal.rules, rule.rule) };
+        savePersonal(personal);
+        renderIgnoredRules();
+        corrector.refresh();
+      },
+    })),
+    "Rétablir",
+    "Aucune règle ignorée.",
+  );
+}
+
 async function openSettings() {
   if (document.querySelector("dialog[open]")) return;
   for (const radio of settingsForm.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
-    radio.checked = radio.value === settings[radio.name as "theme" | "startup"];
+    radio.checked = radio.value === settings[radio.name as "theme" | "startup" | "reference"];
   }
+  for (const name of CORRECTION_SETTINGS) {
+    settingsForm.querySelector<HTMLInputElement>(`input[name="${name}"]`)!.checked = settings[name];
+  }
+  renderIgnoredRules();
   sizeInput.value = String(settings.size);
   fillFontSelect([]);
   settingsDialog.showModal();
@@ -2020,6 +2179,7 @@ settingsForm.addEventListener("change", () => {
   // La saisie est ramenée dans les limites ; un champ vide garde la taille actuelle.
   const typed = data.get("size") === "" ? NaN : Number(data.get("size"));
   const size = Number.isFinite(typed) ? Math.min(MAX_SIZE, Math.max(MIN_SIZE, typed)) : settings.size;
+  const previous = settings;
   settings = normalizeSettings({
     theme: data.get("theme"),
     font: data.get("font"),
@@ -2027,12 +2187,22 @@ settingsForm.addEventListener("change", () => {
     startup: data.get("startup"),
     nbsp: settings.nbsp,
     consignes: settings.consignes,
+    checkWhileTyping: data.get("checkWhileTyping") === "on",
+    grammar: data.get("grammar") === "on",
+    spelling: data.get("spelling") === "on",
+    typography: data.get("typography") === "on",
+    reference: data.get("reference"),
   });
   sizeInput.value = String(settings.size);
   applySettings(settings);
   saveSettings(settings);
   // La police ou la taille ont pu changer : l'éditeur remesure ses lignes.
   view.requestMeasure();
+  // Un autre dictionnaire oublie les réponses gardées ; une sorte cochée ou
+  // décochée change seulement ce qui est montré.
+  if (settings.reference !== previous.reference) corrector.setReference(settings.reference);
+  else corrector.refresh();
+  syncTypingMenu();
 });
 
 // Entrée dans le champ Taille valide la saisie sans fermer la boîte.
@@ -2083,6 +2253,71 @@ function toggleConsignes() {
 }
 
 syncConsignesMenu();
+
+// ---------------------------------------------------------------------------
+// Correction : case du menu, Dictionnaires…, remarque suivante ou précédente
+// ---------------------------------------------------------------------------
+
+// La case du menu suit le réglage, y compris au lancement.
+function syncTypingMenu() {
+  invoke("set_menu_item_checked", { id: "correction-typing", checked: settings.checkWhileTyping }).catch((error) => {
+    setStatus(`le menu Correction n'a pas pu être mis à jour (${error})`, true);
+  });
+}
+
+function toggleCheckWhileTyping() {
+  settings = { ...settings, checkWhileTyping: !settings.checkWhileTyping };
+  saveSettings(settings);
+  syncTypingMenu();
+  setCorrectionStatus(settings.checkWhileTyping ? "Le paragraphe en cours est vérifié pendant la frappe." : "Le texte n'est plus vérifié pendant la frappe.");
+}
+
+syncTypingMenu();
+
+const dictionariesDialog = document.querySelector<HTMLDialogElement>("#dictionaries-dialog")!;
+const textWords = document.querySelector<HTMLUListElement>("#dictionary-text")!;
+const personalWords = document.querySelector<HTMLUListElement>("#dictionary-personal")!;
+
+function renderDictionaries() {
+  renderEntries(
+    textWords,
+    currentTextData.words.map((word) => ({
+      label: word,
+      action: () => {
+        currentTextData = { ...currentTextData, words: withoutItem(currentTextData.words, word) };
+        rememberTextData();
+        renderDictionaries();
+        corrector.refresh();
+      },
+    })),
+    "Retirer",
+    "Aucun mot ajouté à ce texte.",
+  );
+  renderEntries(
+    personalWords,
+    personal.words.map((word) => ({
+      label: word,
+      action: () => {
+        personal = { ...personal, words: withoutItem(personal.words, word) };
+        savePersonal(personal);
+        renderDictionaries();
+        corrector.refresh();
+      },
+    })),
+    "Retirer",
+    "Aucun mot ajouté à ton dictionnaire.",
+  );
+}
+
+function openDictionaries() {
+  if (document.querySelector("dialog[open]")) return;
+  renderDictionaries();
+  dictionariesDialog.showModal();
+}
+
+function goToNextRemark(direction: 1 | -1) {
+  if (!goToRemark(view, direction)) setCorrectionStatus("Aucune remarque affichée : lance d'abord la vérification (F7).");
+}
 
 // ---------------------------------------------------------------------------
 // Recherche : le panneau de l'éditeur, ouvert sur la vue Texte
@@ -2305,6 +2540,12 @@ const ACTIONS: Record<string, () => void> = {
   "view-board": () => show("board"),
   "view-fullscreen": toggleFullscreen,
   "view-consignes": toggleConsignes,
+  "correction-check": () => corrector.check(),
+  "correction-next": () => goToNextRemark(1),
+  "correction-previous": () => goToNextRemark(-1),
+  "correction-clear": () => corrector.clear(),
+  "correction-typing": toggleCheckWhileTyping,
+  "correction-dictionaries": openDictionaries,
   "scenario-cover": openCover,
   "scenario-model": chooseModel,
   "help-about": openAbout,
@@ -2329,12 +2570,19 @@ function runAction(id: string) {
     // Le menu a déjà basculé sa case : elle reprend l'état de l'app.
     if (id === "edit-nbsp") syncNbspMenu();
     if (id === "view-consignes") syncConsignesMenu();
+    if (id === "correction-typing") syncTypingMenu();
     return;
   }
   // Les commandes d'édition agissent sur le texte : elles n'ont de sens que
   // si la vue Texte est affichée.
   if (id.startsWith("edit-") && id !== "edit-settings" && id !== "edit-nbsp" && viewText.hidden) {
     setStatus("Cette commande agit sur le texte : affiche d'abord la vue Texte.");
+    return;
+  }
+  // La correction agit sur le texte : elle n'a de sens que sur la vue Texte.
+  if (id.startsWith("correction-") && viewText.hidden) {
+    setStatus("La correction agit sur le texte : affiche d'abord la vue Texte.");
+    if (id === "correction-typing") syncTypingMenu();
     return;
   }
   if (id === "scenario-cover" && currentFormat !== "scenario") {

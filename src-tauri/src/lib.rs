@@ -726,11 +726,36 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .build(app)?;
     let screenplay = SubmenuBuilder::new(app, "Scénario").item(&model).item(&cover).build()?;
 
+    // Inactives au lancement, sur l'accueil : la page les active sur la vue Texte.
+    let correction_item = |id: &str, label: &str, shortcut: Option<&str>| {
+        let builder = MenuItemBuilder::with_id(id, label).enabled(false);
+        match shortcut {
+            Some(keys) => builder.accelerator(keys),
+            None => builder,
+        }
+        .build(app)
+    };
+    // Décochée au lancement : la page la règle ensuite sur le réglage retenu.
+    let typing = CheckMenuItemBuilder::with_id("correction-typing", "Vérifier pendant la frappe")
+        .checked(false)
+        .enabled(false)
+        .build(app)?;
+    let correction = SubmenuBuilder::new(app, "Correction")
+        .item(&correction_item("correction-check", "Vérifier", Some("F7"))?)
+        .item(&correction_item("correction-next", "Remarque suivante", Some("F8"))?)
+        .item(&correction_item("correction-previous", "Remarque précédente", Some("Shift+F8"))?)
+        .item(&correction_item("correction-clear", "Effacer les remarques", None)?)
+        .separator()
+        .item(&typing)
+        .separator()
+        .item(&correction_item("correction-dictionaries", "Dictionnaires…", None)?)
+        .build()?;
+
     let help = SubmenuBuilder::new(app, "Aide")
         .item(&item("help-about", "À propos de Schreibdrang", None)?)
         .build()?;
 
-    MenuBuilder::new(app).items(&[&file, &edit, &view, &screenplay, &help]).build()
+    MenuBuilder::new(app).items(&[&file, &edit, &view, &correction, &screenplay, &help]).build()
 }
 
 /// Active ou désactive une entrée de la barre de menu, cherchée dans chaque menu.

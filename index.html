@@ -64,6 +64,7 @@
     <footer id="footer">
       <span id="counts">…</span>
       <span id="latency">Latence de frappe : —</span>
+      <span id="correction-status" role="status"></span>
       <span id="export-status" role="status"></span>
     </footer>
 
@@ -190,6 +191,19 @@
           <label><input type="radio" name="startup" value="accueil" /> Afficher l'accueil</label>
           <label><input type="radio" name="startup" value="dernier" /> Rouvrir le dernier texte</label>
         </fieldset>
+        <fieldset>
+          <legend>Correction</legend>
+          <label><input type="checkbox" name="checkWhileTyping" /> Vérifier pendant la frappe</label>
+          <label><input type="checkbox" name="grammar" /> Grammaire</label>
+          <label><input type="checkbox" name="spelling" /> Orthographe</label>
+          <label><input type="checkbox" name="typography" /> Typographie</label>
+          <p class="label">Orthographe de référence</p>
+          <label><input type="radio" name="reference" value="toutes" /> Toutes variantes</label>
+          <label><input type="radio" name="reference" value="classique" /> Classique</label>
+          <label><input type="radio" name="reference" value="reforme" /> Réforme de 1990</label>
+          <p class="label">Règles ignorées</p>
+          <ul id="setting-rules" class="word-list"></ul>
+        </fieldset>
         <div class="actions">
           <button type="submit" value="close" class="primary">Fermer</button>
         </div>
@@ -233,6 +247,22 @@
         </div>
       </form>
     </dialog>
+    <dialog id="dictionaries-dialog" aria-labelledby="dictionaries-title">
+      <form method="dialog">
+        <h2 id="dictionaries-title">Dictionnaires</h2>
+        <fieldset>
+          <legend>Ce texte</legend>
+          <ul id="dictionary-text" class="word-list"></ul>
+        </fieldset>
+        <fieldset>
+          <legend>Tous mes textes</legend>
+          <ul id="dictionary-personal" class="word-list"></ul>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" value="close" class="primary">Fermer</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="about-dialog" aria-labelledby="about-title">
       <form method="dialog">
         <img src="/src/icone.svg" alt="" width="72" height="72" />
@@ -241,6 +271,7 @@
         <p>Prototype 0.0.38</p>
         <p>Schreibdrang est un logiciel libre, distribué sous licence GPL 3 ou ultérieure.</p>
         <p class="credits">Polices : Jost*, Courier Prime et Literata (licence SIL OFL). Pictogrammes : Lucide (licence ISC).</p>
+        <p class="credits">Correction : Grammalecte, par Olivier R. (licence GPL 3).</p>
         <div class="actions">
           <button type="submit" value="close" class="primary">Fermer</button>
         </div>
