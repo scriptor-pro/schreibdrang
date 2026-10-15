@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NEW_PLAY, classifyPlay, renumberChanges, renumberMessage, renumberPlay, toRoman } from "../src/theatre.ts";
+import { NEW_PLAY, bannerAt, classifyPlay, parsePlay, playCharacterNames, playPosition, renumberChanges, renumberMessage, renumberPlay, sceneOffset, toRoman } from "../src/theatre.ts";
+import { serializeDocument } from "../src/outline.ts";
 
 export const PLAY = [
   "PERSONNAGES",
@@ -83,4 +84,62 @@ test("une pièce déjà bien numérotée ne change pas", () => {
   assert.deepEqual(renumberChanges("# ACTE I\n\n## Scène 1\n\n## Scène 2\n"), []);
   assert.equal(renumberMessage(0), "Les numéros des actes et des scènes étaient déjà justes.");
   assert.equal(renumberMessage(3), "Actes et scènes renumérotés.");
+});
+
+test("une pièce se découpe en actes et en scènes, et se réécrit à l'identique", () => {
+  const text = "PERSONNAGES\n\nCLAIRE, sa sœur.\n\n# ACTE I\n\n## Scène 1\n\nCLAIRE\nBonjour.\n\n# ACTE II\n\n## Scène 1\n\nTHÉO\nAdieu.\n";
+  const outline = parsePlay(text);
+  assert.equal(outline.preamble, "PERSONNAGES\n\nCLAIRE, sa sœur.");
+  assert.deepEqual(outline.chapters.map((act) => [act.heading, act.scenes.map((scene) => scene.heading)]), [
+    ["# ACTE I", ["## Scène 1"]],
+    ["# ACTE II", ["## Scène 1"]],
+  ]);
+  assert.equal(serializeDocument(outline), text);
+});
+
+test("des scènes avant le premier acte forment une colonne sans titre, et reviennent intactes", () => {
+  const text = "## Scène 1\n\nA.\n\n# ACTE I\n\n## Scène 1\n\nB.\n";
+  const outline = parsePlay(text);
+  assert.equal(outline.chapters[0].heading, "");
+  assert.equal(outline.chapters[0].scenes.length, 1);
+  assert.equal(serializeDocument(outline), text);
+});
+
+test("la place d'une scène dans le texte, par son rang", () => {
+  const text = "# ACTE I\n\n## Scène 1\n\nA.\n\n# ACTE II\n\n## Scène 1\n";
+  assert.equal(sceneOffset(text, 0), text.indexOf("## Scène 1"));
+  assert.equal(sceneOffset(text, 1), text.lastIndexOf("## Scène 1"));
+  assert.equal(sceneOffset(text, 2), -1);
+});
+
+test("le pied de page dit l'acte et la scène du curseur", () => {
+  const kinds = classifyPlay(PLAY);
+  assert.equal(playPosition(PLAY, kinds, PLAY.indexOf("Tu rentres tard.")), "Acte I, scène 1");
+  assert.equal(playPosition(PLAY, kinds, 2), "Personnages");
+  assert.equal(playPosition(PLAY, kinds, 5), "Acte I");
+  const note = ["Note.", "", "# ACTE I"];
+  assert.equal(playPosition(note, classifyPlay(note), 0), "");
+});
+
+test("le pied de page compte une scène sans numéro, et nomme un acte sans numéro", () => {
+  const free = ["# ACTE II — L'orage", "", "## Le retour", "", "## Le départ", "Texte."];
+  assert.equal(playPosition(free, classifyPlay(free), 5), "Acte II, scène 2");
+  const prologue = ["# Prologue", "", "## Scène 1", "Texte."];
+  assert.equal(playPosition(prologue, classifyPlay(prologue), 3), "Prologue, scène 1");
+});
+
+test("le bandeau nomme l'acte et la scène de la première ligne affichée", () => {
+  const kinds = classifyPlay(PLAY);
+  assert.deepEqual(bannerAt(PLAY, kinds, PLAY.indexOf("Tu rentres tard.")), { title: "ACTE I — Scène 1", heading: 7 });
+  assert.deepEqual(bannerAt(PLAY, kinds, 2), { title: "Personnages", heading: 0 });
+  const lines = ["Note.", "", "# ACTE I", "", "## Scène 2 — Claire, Théo", "Oui."];
+  assert.deepEqual(bannerAt(lines, classifyPlay(lines), 0), { title: "", heading: -1 });
+  assert.deepEqual(bannerAt(lines, classifyPlay(lines), 5), { title: "ACTE I — Scène 2 — Claire, Théo", heading: 4 });
+  const actOnly = ["# ACTE I", "", "Un texte."];
+  assert.deepEqual(bannerAt(actOnly, classifyPlay(actOnly), 2), { title: "ACTE I", heading: 0 });
+});
+
+test("les noms des personnages, ceux qui parlent et ceux de la liste", () => {
+  const text = "PERSONNAGES\n\nJEAN-PIERRE, son oncle.\nla Mère, une voisine.\n\n# ACTE I\n\n## Scène 1\n\nMARIE (à part)\nEnfin.\n";
+  assert.deepEqual(playCharacterNames(text), new Set(["JEAN-PIERRE", "JEAN", "PIERRE", "MARIE"]));
 });
