@@ -32,7 +32,25 @@ function entryOf(line: string): CastEntry | undefined {
   return { name: head, presentation: comma < 0 ? "" : line.slice(comma + 1).trim() };
 }
 
-export function parseCast(text: string): CastBlock | undefined {
+// Début du premier titre d'acte ou de scène ; undefined s'il n'y en a pas.
+export function firstHeading(text: string): number | undefined {
+  const lines = text.split("\n");
+  const kinds = classifyPlay(lines);
+  let offset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (kinds[i] === "act" || kinds[i] === "scene") return offset;
+    offset += lines[i].length + 1;
+  }
+  return undefined;
+}
+
+// La liste en tête de pièce ; undefined s'il n'y en a pas, ou si aucun acte
+// ni aucune scène ne la suit (tout le texte serait alors pris pour la liste).
+// Une liste écrite à la main : toute ligne qui commence par un nom en
+// capitales est une entrée. Une liste tenue par l'app (`managed`) : les
+// entrées sont les lignes qui suivent le titre et sa ligne vide, d'un seul
+// tenant ; tout ce qui vient après est libre, même en capitales.
+export function parseCast(text: string, managed = false): CastBlock | undefined {
   const lines = text.split("\n");
   const kinds = classifyPlay(lines);
   const title = kinds.indexOf("cast-title");
@@ -43,19 +61,28 @@ export function parseCast(text: string): CastBlock | undefined {
     offset += line.length + 1;
     return start;
   });
-  const block: CastBlock = { from: starts[title], to: text.length, generatedTo: starts[title] + lines[title].length, entries: [], free: [] };
+  let end = -1;
   for (let i = title + 1; i < lines.length; i++) {
     if (kinds[i] === "act" || kinds[i] === "scene") {
-      block.to = starts[i];
+      end = i;
       break;
     }
-    if (kinds[i] !== "cast") continue;
-    const entry = entryOf(lines[i]);
+  }
+  if (end < 0) return undefined;
+  const block: CastBlock = { from: starts[title], to: starts[end], generatedTo: starts[title] + lines[title].length, entries: [], free: [] };
+  let inEntries = managed && title + 2 < end && lines[title + 1].trim() === "" && lines[title + 2].trim() !== "";
+  for (let i = title + 1; i < end; i++) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      if (managed && i > title + 1) inEntries = false;
+      continue;
+    }
+    const entry = managed ? (inEntries ? (entryOf(line) ?? { name: line.trim(), presentation: "" }) : undefined) : entryOf(line);
     if (entry) {
       block.entries.push(entry);
-      block.generatedTo = starts[i] + lines[i].length;
+      block.generatedTo = starts[i] + line.length;
     } else {
-      block.free.push(lines[i].trim());
+      block.free.push(line.trim());
     }
   }
   return block;
@@ -89,18 +116,27 @@ export function orderedSheets(sheets: Sheet[], speakers: Speaker[]): Sheet[] {
 }
 
 export function castText(sheets: Sheet[], speakers: Speaker[], free: string[]): string {
-  const lines = orderedSheets(sheets, speakers).map(castLine);
+  const lines = orderedSheets(sheets, speakers).map(castLine).filter(Boolean);
+  if (lines.length === 0) return `PERSONNAGES\n\n${free.length ? `\n${free.join("\n")}\n` : ""}\n`;
   return `PERSONNAGES\n\n${lines.join("\n")}\n${free.length ? `\n${free.join("\n")}\n` : ""}\n`;
 }
 
-// Le changement qui refait la liste à partir des fiches, ou la crée en tête
-// de la pièce ; undefined si elle est déjà à jour.
-export function castChange(text: string, sheets: Sheet[], speakers: Speaker[]): { from: number; to: number; insert: string } | undefined {
-  const block = parseCast(text);
+// Le changement qui refait la liste à partir des fiches, ou la crée juste
+// avant le premier acte ; undefined si elle est déjà à jour, ou si la pièce
+// n'a encore ni acte ni scène. `managed` : la liste est tenue par l'app.
+export function castChange(
+  text: string,
+  sheets: Sheet[],
+  speakers: Speaker[],
+  managed = false,
+): { from: number; to: number; insert: string } | undefined {
+  const block = parseCast(text, managed);
   const insert = castText(sheets, speakers, block?.free ?? []);
-  if (!block) return { from: 0, to: 0, insert };
-  if (text.slice(block.from, block.to) === insert) return undefined;
-  return { from: block.from, to: block.to, insert };
+  if (block) return text.slice(block.from, block.to) === insert ? undefined : { from: block.from, to: block.to, insert };
+  // Un titre « PERSONNAGES » sans acte après lui : rien à faire.
+  if (classifyPlay(text.split("\n")).includes("cast-title")) return undefined;
+  const heading = firstHeading(text);
+  return heading === undefined ? undefined : { from: heading, to: heading, insert };
 }
 
 // Une fiche par entrée d'une liste écrite à la main, dans l'ordre de la liste.

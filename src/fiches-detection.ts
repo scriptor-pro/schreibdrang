@@ -121,9 +121,13 @@ export function speakers(text: string, format: "scenario" | "theatre"): Speaker[
 
   const byKey = new Map<string, Speaker>();
   let scene = "";
+  // Au théâtre, la position (« Acte II, scène 3 ») est calculée une fois par
+  // scène : la chercher pour chaque réplique reparcourrait toute la pièce.
+  let where: string | undefined;
   let replyCount = 0;
   for (let i = 0; i < lines.length; i++) {
     if (screen && kind(i) === "scene") scene = sceneTitle(lines[i].trim());
+    if (play && (kind(i) === "act" || kind(i) === "scene")) where = undefined;
     if (kind(i) !== "character") continue;
     const label = speakerLabel(lines[i]);
     if (!label) continue;
@@ -142,8 +146,8 @@ export function speakers(text: string, format: "scenario" | "theatre"): Speaker[
     }
     replyCount++;
     speaker.words += parts.filter((part) => !part.stage).reduce((sum, part) => sum + countWords(part.text), 0);
-    const where = play ? playPosition(lines, play, i) : scene;
-    speaker.replies.push({ from: starts[i + 1], to: starts[j - 1] + lines[j - 1].length, where, parts });
+    if (play) where ??= playPosition(lines, play, i);
+    speaker.replies.push({ from: starts[i + 1], to: starts[j - 1] + lines[j - 1].length, where: play ? where! : scene, parts });
     i = j - 1;
   }
   return [...byKey.values()];

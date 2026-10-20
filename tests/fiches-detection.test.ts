@@ -102,3 +102,23 @@ test("deux personnages qui parlent ensemble ne sont pas un troisième", () => {
   assert.equal(isGroup(speaker("ANTOINE ET JOSÉPHINE"), [], others), true);
   assert.equal(isGroup(speaker("ANTOINE ET MAXIME"), [], others), false);
 });
+
+test("les personnages qui parlent se trouvent vite dans une longue pièce", () => {
+  let play = "";
+  for (let act = 1; act <= 5; act++) {
+    play += `# ACTE ${act}\n\n`;
+    for (let scene = 1; scene <= 8; scene++) {
+      play += `## Scène ${scene}\n\n`;
+      for (let i = 0; i < 100; i++) play += `${i % 2 ? "CLAIRE" : "THÉO"}\nUne réplique de quelques mots, pas plus.\n\n`;
+    }
+  }
+  let best = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const start = performance.now();
+    const list = speakers(play, "theatre");
+    best = Math.min(best, performance.now() - start);
+    assert.equal(list[0].replies.length, 2000);
+    assert.equal(list[0].replies[1999].where, "Acte 5, scène 8");
+  }
+  assert.ok(best < 150, `${Math.round(best)} ms`);
+});

@@ -68,3 +68,31 @@ test("la liste tenue par l'app est protégée", () => {
   const undo = state.update({ changes: { from: 0, to: 11, insert: "LISTE" }, userEvent: "undo" });
   assert.equal(undo.state.doc.toString(), "LISTE\n\nCLAIRE\n");
 });
+
+test("une réécriture de tout le texte qui garde la liste intacte passe (cork board)", () => {
+  const doc = "PERSONNAGES\n\nCLAIRE\n\n# ACTE I\n\n## Scène 1\n\n## Scène 2\n";
+  const { h, refused } = host({ range: { from: 0, to: 19 } });
+  const state = EditorState.create({ doc, extensions: protection(h) });
+  const moved = "PERSONNAGES\n\nCLAIRE\n\n# ACTE I\n\n## Scène 2\n\n## Scène 1\n";
+  assert.equal(state.update({ changes: { from: 0, to: doc.length, insert: moved } }).state.doc.toString(), moved);
+  assert.equal(refused.length, 0);
+});
+
+test("écrire au bord de la liste tenue est refusé", () => {
+  const doc = "PERSONNAGES\n\nCLAIRE\n\n# ACTE I\n";
+  const { h, refused } = host({ range: { from: 0, to: 19 } });
+  const state = EditorState.create({ doc, extensions: protection(h) });
+  assert.equal(state.update({ changes: { from: 19, insert: " et" } }).state.doc.toString(), doc);
+  assert.equal(state.update({ changes: { from: 0, insert: "X" } }).state.doc.toString(), doc);
+  assert.equal(refused.length, 2);
+  // Juste après la ligne, sur la ligne vide, on écrit librement.
+  assert.equal(state.update({ changes: { from: 20, insert: "Note." } }).state.doc.toString(), "PERSONNAGES\n\nCLAIRE\nNote.\n# ACTE I\n");
+});
+
+test("un nom déjà tapé en entier n'est plus proposé (Tab garde son rôle)", () => {
+  assert.equal(complete("Il sort.\n\nMARIE", host({ format: "theatre" }).h), null);
+  assert.equal(complete("Il voit Marie", host().h), null);
+  const mathieu = { ...emptySheet("t", 3), firstName: "Mariette" };
+  const h: PeopleHost = { ...host().h, sheets: () => [marie, mathieu] };
+  assert.deepEqual(complete("Il voit Marie", h)!.options.map((o) => o.label), ["Mariette"]);
+});

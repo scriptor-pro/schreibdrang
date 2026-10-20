@@ -3,7 +3,7 @@
 // même nom. Chaque saisie est prise en compte aussitôt, sans bouton
 // « Enregistrer » : la fiche s'enregistre avec le texte.
 
-import { DRAMATIC_FUNCTIONS, displayName, emptySheet, isFullSheet, isValidSheet, newSheetId } from "./fiches.ts";
+import { DRAMATIC_FUNCTIONS, UNNAMED, displayName, emptySheet, isFullSheet, isValidSheet, newSheetId } from "./fiches.ts";
 import type { CustomField, Importance, Relation, Sheet, SheetsFile } from "./fiches.ts";
 import type { Reply } from "./fiches-detection.ts";
 
@@ -72,6 +72,13 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
   let fieldCount = 0;
 
   const file = () => host.file();
+
+  // Redessine la fiche, puis rend le focus clavier à l'élément voulu : sans
+  // lui, il tomberait sur la page, et Échap ne fermerait plus le panneau.
+  function rerender(sheet: Sheet, selector: string) {
+    api.showSheet(sheet.id, false);
+    (root.querySelector<HTMLElement>(selector) ?? root.querySelector<HTMLElement>("button"))?.focus();
+  }
   const sheetById = (id: string) => (draft?.id === id ? draft : file().personnages.find((s) => s.id === id));
 
   root.addEventListener("keydown", (event) => {
@@ -131,16 +138,21 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     return el("section", { class: "people-block" }, el("h3", {}, title), ...children);
   }
 
+  function keyedBlock(key: string, title: string, ...children: Node[]): HTMLElement {
+    const section = block(title, ...children);
+    section.dataset.block = key;
+    return section;
+  }
+
   function importanceField(sheet: Sheet): HTMLElement {
     const id = `people-field-${fieldCount++}`;
-    const select = el("select", { id });
+    const select = el("select", { id, "data-field": "importance" });
     for (const [value, label] of IMPORTANCES) select.append(el("option", { value }, label));
     select.value = sheet.importance;
     select.addEventListener("change", () => {
       sheet.importance = select.value as Importance;
       commit(sheet, false);
-      api.showSheet(sheet.id, false);
-      root.querySelector<HTMLSelectElement>(`select`)?.focus();
+      rerender(sheet, 'select[data-field="importance"]');
     });
     return el("div", { class: "people-field" }, el("label", { for: id }, "Importance"), select);
   }
@@ -190,17 +202,17 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
         el("li", {}, select, nature, button("Retirer", () => {
           sheet.relations.splice(index, 1);
           commit(sheet, false);
-          api.showSheet(sheet.id, false);
+          rerender(sheet, '[data-block="relations"] > button');
         })),
       );
     });
     const add = button("Ajouter une relation", () => {
       sheet.relations.push({ to: others[0].id, nature: "" });
       commit(sheet, false);
-      api.showSheet(sheet.id, false);
+      rerender(sheet, '[data-block="relations"] li:last-child select');
     });
     add.disabled = others.length === 0;
-    return block("Relations", list, add);
+    return keyedBlock("relations", "Relations", list, add);
   }
 
   function customField(sheet: Sheet): HTMLElement {
@@ -222,14 +234,14 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
         el("li", {}, label, value, button("Retirer", () => {
           sheet.custom.splice(index, 1);
           commit(sheet, false);
-          api.showSheet(sheet.id, false);
+          rerender(sheet, '[data-block="custom"] > button');
         })),
       );
     });
-    return block("Champs personnalisés", list, button("Ajouter un champ", () => {
+    return keyedBlock("custom", "Champs personnalisés", list, button("Ajouter un champ", () => {
       sheet.custom.push({ label: "", value: "" });
       commit(sheet, false);
-      api.showSheet(sheet.id, false);
+      rerender(sheet, '[data-block="custom"] li:last-child input');
     }));
   }
 
@@ -298,7 +310,8 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     ];
     if (full) {
       nodes.push(
-        block(
+        keyedBlock(
+          "moteur",
           "Moteur dramatique",
           textField(sheet, "desire", "Désir", true),
           textField(sheet, "need", "Besoin", true),
@@ -316,7 +329,7 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     } else {
       nodes.push(button("Afficher toute la fiche", () => {
         expanded.add(sheet.id);
-        api.showSheet(sheet.id, false);
+        rerender(sheet, '[data-block="moteur"] textarea');
       }));
     }
     const replies = host.replies(sheet);
@@ -332,7 +345,7 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     const sheets = [...current.personnages].sort((a, b) => displayName(a).localeCompare(displayName(b), "fr"));
     const list = el("ul", { class: "people-list" });
     for (const sheet of sheets) {
-      const open = button(displayName(sheet), () => api.showSheet(sheet.id, true), "people-entry");
+      const open = button(displayName(sheet) || UNNAMED, () => api.showSheet(sheet.id, true), "people-entry");
       const importance = IMPORTANCES.find(([value]) => value === sheet.importance)?.[1];
       if (sheet.importance && importance) open.append(el("small", {}, importance));
       list.append(el("li", {}, open));

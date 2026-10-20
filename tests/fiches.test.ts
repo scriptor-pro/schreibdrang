@@ -64,3 +64,11 @@ test("un figurant a une fiche réduite", () => {
   assert.equal(isFullSheet({ ...emptySheet("x", 1), importance: "figurant" }), false);
   assert.equal(isFullSheet(emptySheet("x", 1)), true);
 });
+
+test("une fiche dont on a effacé les noms n'est pas perdue à la relecture", () => {
+  const file = { ...emptySheetsFile(), personnages: [{ ...emptySheet("a", 1), notes: "Elle ment toujours." }] };
+  const read = normalizeSheetsFile(serializeSheets(file))!;
+  assert.equal(read.personnages.length, 1);
+  assert.equal(read.personnages[0].nickname, "Personnage sans nom");
+  assert.equal(read.personnages[0].notes, "Elle ment toujours.");
+});

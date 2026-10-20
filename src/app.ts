@@ -75,7 +75,7 @@ import type { Sheet, SheetsFile } from "./fiches";
 import { fold } from "./fiches-noms";
 import { PROPOSAL_THRESHOLD, isGroup, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
 import type { Candidate, Reply, Speaker } from "./fiches-detection";
-import { castChange, importCast, parseCast } from "./fiches-theatre";
+import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatre";
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
 import type { PeopleHost } from "./fiches-editeur";
 import { createPanel } from "./fiches-panneau";
@@ -1066,8 +1066,11 @@ const correctionActions: CorrectionActions = {
 // ---------------------------------------------------------------------------
 
 let currentFiches: SheetsFile = emptySheetsFile();
-// Le fichier des fiches existe mais ne se lit pas : il ne sera pas écrasé.
+// Le fichier des fiches existe mais ne se lit pas : il ne sera pas écrasé, et
+// les fiches sont désactivées pour ce texte, pour qu'aucune ne soit créée en
+// vain. « Enregistrer sous » vers un autre nom les rétablit.
 let fichesBlocked = false;
+let blockedSidecar = "";
 // Le fichier des fiches existait à l'ouverture, ou les fiches ont changé
 // depuis : il faut l'écrire à l'enregistrement, même vide.
 let fichesToWrite = false;
@@ -1076,7 +1079,7 @@ const PROTECTED_MESSAGE = "La liste des personnages se modifie par les fiches : 
 
 // Rien des fiches n'agit au format page blanche.
 function peopleEnabled(): boolean {
-  return currentFormat !== "vanilla";
+  return currentFormat !== "vanilla" && !fichesBlocked;
 }
 
 // Au théâtre, l'app tient la liste en tête de pièce quand l'auteur l'a accepté.
@@ -1091,7 +1094,7 @@ function protectedRange(): { from: number; to: number } | undefined {
   if (!castManaged()) return undefined;
   const doc = view.state.doc;
   if (protectedCache?.doc !== doc) {
-    const block = parseCast(doc.toString());
+    const block = parseCast(doc.toString(), true);
     protectedCache = { doc, range: block ? { from: block.from, to: block.generatedTo } : undefined };
   }
   return protectedCache.range;
@@ -1306,11 +1309,20 @@ const panel = createPanel(peopleRoot, {
   closed: () => view.focus(),
 });
 
+// Les personnages qui parlent, gardés tant que le texte ne change pas : la
+// liste sert à chaque changement de ligne du curseur.
+let speakersCache: { text: string; format: "scenario" | "theatre"; list: Speaker[] } | undefined;
+
+function speakersOf(text: string, format: "scenario" | "theatre"): Speaker[] {
+  if (speakersCache?.text !== text || speakersCache.format !== format) speakersCache = { text, format, list: speakers(text, format) };
+  return speakersCache.list;
+}
+
 // Les répliques d'un personnage, au scénario et au théâtre.
 function repliesOf(sheet: Sheet): Reply[] | undefined {
   if (currentFormat !== "theatre" && currentFormat !== "scenario") return undefined;
   const sheets = currentFiches.personnages;
-  return speakers(view.state.doc.toString(), currentFormat)
+  return speakersOf(view.state.doc.toString(), currentFormat)
     .filter((speaker) => speakerSheet(speaker, sheets)?.id === sheet.id)
     .flatMap((speaker) => speaker.replies)
     .sort((a, b) => a.from - b.from);
@@ -1325,16 +1337,21 @@ function openSheets(ids: string[], focus: boolean) {
 // Une pièce sans liste écrite à la main : l'app la tient dès la première fiche.
 function sheetsAdded() {
   if (currentFormat !== "theatre" || currentFiches.listeTenue !== null || currentFiches.personnages.length === 0) return;
-  const block = parseCast(view.state.doc.toString());
+  const text = view.state.doc.toString();
+  // Une pièce sans acte ni scène ne reçoit pas encore de liste.
+  if (firstHeading(text) === undefined) return;
+  const block = parseCast(text);
   if (!block || block.entries.length === 0) currentFiches.listeTenue = true;
 }
 
 // Refait la liste en tête de pièce à partir des fiches, si l'app la tient.
 // Une réécriture s'annule par Ctrl + Z comme une modification du texte.
-function rewriteCast() {
+// `handwritten` : la liste est encore celle écrite à la main (juste après
+// l'import), dont les lignes libres sont reconnues comme telles.
+function rewriteCast(handwritten = false) {
   if (!castManaged()) return;
   const text = view.state.doc.toString();
-  const change = castChange(text, currentFiches.personnages, speakers(text, "theatre"));
+  const change = castChange(text, currentFiches.personnages, speakersOf(text, "theatre"), !handwritten);
   if (change) view.dispatch({ changes: change, annotations: castRewrite.of(true) });
 }
 
@@ -1417,25 +1434,37 @@ function speakersWithoutSheet(): Speaker[] {
   if (currentFormat !== "theatre" && currentFormat !== "scenario") return [];
   const sheets = currentFiches.personnages;
   const ignored = new Set(currentFiches.ecartes.map(fold));
-  const all = speakers(view.state.doc.toString(), currentFormat);
+  const all = speakersOf(view.state.doc.toString(), currentFormat);
   return all.filter(
     (speaker) =>
       !speakerSheet(speaker, sheets) && !isGroup(speaker, sheets, all) && !ignored.has(fold(speaker.label)) && !deferredSpeakers.has(fold(speaker.label)),
   );
 }
 
+// Le texte au dernier examen : sans changement, rien à proposer de neuf.
+let speakersCheckedDoc: unknown;
+
 function proposeForSpeakers() {
-  if (!proposalEl.hidden) return;
+  if (!proposalEl.hidden || speakersCheckedDoc === view.state.doc) return;
+  speakersCheckedDoc = view.state.doc;
   const speaker = speakersWithoutSheet()[0];
   if (!speaker) return;
   proposeInFooter({
     text: `“${speaker.label}” n'a pas de fiche.`,
     actions: [
-      { label: "Créer sa fiche", run: () => addSheets([sheetFromLabel(speaker.label, newSheetId(), Date.now())]) },
+      {
+        label: "Créer sa fiche",
+        run: () => {
+          addSheets([sheetFromLabel(speaker.label, newSheetId(), Date.now())]);
+          speakersCheckedDoc = undefined;
+          proposeForSpeakers();
+        },
+      },
       {
         label: "Ignorer",
         run: () => {
           ignoreWord(speaker.label);
+          speakersCheckedDoc = undefined;
           proposeForSpeakers();
         },
       },
@@ -1463,10 +1492,11 @@ function offerCastImport() {
           // Les entrées qui ont déjà une fiche n'en reçoivent pas une seconde.
           const missing = { ...block, entries: block.entries.filter((entry) => !speakerSheet({ label: entry.name, words: 0, first: 0, replies: [] }, currentFiches.personnages)) };
           currentFiches.listeTenue = true;
-          addSheets(importCast(missing, newSheetId, Date.now()));
+          currentFiches.personnages.push(...importCast(missing, newSheetId, Date.now()));
           fichesToWrite = true;
           setDirty(true);
-          rewriteCast();
+          view.dispatch({ effects: refreshNames.of(null) });
+          rewriteCast(true);
           panel.refresh();
           proposeGrouped();
         },
@@ -1539,21 +1569,30 @@ async function loadFiches(path: string | undefined) {
           fichesToWrite = true;
         } else {
           fichesBlocked = true;
-          setStatus(`le fichier des fiches (${sidecar}) est illisible : il ne sera pas modifié`, true);
+          blockedSidecar = sidecar;
+          setStatus(`le fichier des fiches (${sidecar}) est illisible : il ne sera pas modifié, et les fiches sont désactivées pour ce texte`, true);
         }
       }
     } catch (error) {
       if (generation !== fichesGeneration) return;
       fichesBlocked = true;
-      setStatus(`le fichier des fiches (${sidecar}) n'a pas pu être lu (${error}) : il ne sera pas modifié`, true);
+      blockedSidecar = sidecar;
+      setStatus(`le fichier des fiches (${sidecar}) n'a pas pu être lu (${error}) : il ne sera pas modifié, et les fiches sont désactivées pour ce texte`, true);
     }
   }
   view.dispatch({ effects: refreshNames.of(null) });
+  refreshPeopleMenu();
   if (peopleEnabled()) openingProposals();
 }
 
 // Écrit les fiches à côté du texte ; une erreur ne défait pas l'enregistrement du texte.
 async function writeFiches(path: string) {
+  // Enregistré sous un autre nom : le fichier illisible reste où il est, et
+  // les fiches sont rétablies pour le nouveau texte.
+  if (fichesBlocked && sidecarPath(path) !== blockedSidecar) {
+    fichesBlocked = false;
+    refreshPeopleMenu();
+  }
   if (fichesBlocked) return;
   const file = currentFiches;
   if (!fichesToWrite && file.personnages.length === 0 && file.ecartes.length === 0 && file.listeTenue === null) return;
@@ -2008,6 +2047,8 @@ window.addEventListener("keydown", (event) => {
       : key === "s" ? (event.shiftKey ? "file-save-as" : "file-save")
       : key === "f" && !event.shiftKey ? "file-find"
       : key === "q" && !event.shiftKey ? "file-quit"
+      : key === "p" && event.shiftKey ? "people-list"
+      : key === "f" && event.shiftKey ? "people-open"
       : undefined;
     if (id) {
       event.preventDefault();
@@ -3178,8 +3219,12 @@ function runAction(id: string) {
       setStatus("Il n'y a pas encore de texte : crée ou ouvre d'abord un texte.");
       return;
     }
-    if (!peopleEnabled()) {
+    if (currentFormat === "vanilla") {
       setStatus("Les fiches personnage n'existent pas au format page blanche.");
+      return;
+    }
+    if (fichesBlocked) {
+      setStatus("Le fichier des fiches de ce texte est illisible : les fiches sont désactivées. Enregistre le texte sous un autre nom pour en créer.");
       return;
     }
     if (id === "people-replies" && currentFormat !== "theatre" && currentFormat !== "scenario") {

@@ -7,10 +7,10 @@ import { Annotation, EditorState, Prec, RangeSetBuilder, StateEffect, StateField
 import type { Extension, StateEffectType } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, keymap } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
-import { acceptCompletion, autocompletion, closeCompletion } from "@codemirror/autocomplete";
+import { acceptCompletion, autocompletion, closeCompletion, moveCompletionSelection } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
 import type { Sheet } from "./fiches.ts";
-import { completionsFor, findNames, hitAt } from "./fiches-noms.ts";
+import { completionsFor, findNames, fold, hitAt } from "./fiches-noms.ts";
 import type { NameHit } from "./fiches-noms.ts";
 import { wordBefore } from "./fiches-detection.ts";
 import type { Candidate } from "./fiches-detection.ts";
@@ -74,7 +74,9 @@ export function nameSource(host: PeopleHost): CompletionSource {
       }
       if (!joined) continue;
       const start = tokens[first].index;
-      const found = completionsFor(before.slice(start), sheets);
+      const typed = fold(before.slice(start));
+      // Un nom déjà tapé en entier n'est plus proposé : Tab garde son rôle.
+      const found = completionsFor(before.slice(start), sheets).filter((item) => fold(item.label) !== typed);
       if (found.length === 0) continue;
       return {
         from: line.from + start,
@@ -87,19 +89,27 @@ export function nameSource(host: PeopleHost): CompletionSource {
 }
 
 // La partie de la liste tenue par l'app ne s'écrit pas à la main : seules ses
-// réécritures par l'app, et leur annulation, la modifient.
+// réécritures par l'app, et leur annulation, la modifient. Un changement qui
+// la laisse intacte passe, même s'il la recouvre (le cork board réécrit tout
+// le texte) ; une écriture à ses bords compte comme une écriture dedans.
 export function protection(host: PeopleHost): Extension {
   return EditorState.changeFilter.of((tr) => {
-    if (tr.annotation(castRewrite) || tr.isUserEvent("undo") || tr.isUserEvent("redo")) return true;
+    if (!tr.docChanged || tr.annotation(castRewrite) || tr.isUserEvent("undo") || tr.isUserEvent("redo")) return true;
     const range = host.protectedRange();
     if (!range) return true;
     let touches = false;
     tr.changes.iterChangedRanges((from, to) => {
-      if (from < range.to && to > range.from) touches = true;
+      if (from <= range.to && to >= range.from) touches = true;
     });
     if (!touches) return true;
+    // La liste et le caractère qui la suit, au même endroit avant et après :
+    // une ligne collée au bout de la dernière entrée change ce caractère.
+    const length = range.to - range.from + 1;
+    const start = tr.changes.mapPos(range.from, -1);
+    const before = tr.startState.doc.sliceString(range.from, range.from + length);
+    if (tr.newDoc.sliceString(start, start + length) === before) return true;
     host.refused();
-    return [range.from, range.to];
+    return false;
   });
 }
 
@@ -156,6 +166,10 @@ export function peopleExtension(host: PeopleHost): Extension {
       keymap.of([
         { key: "Tab", run: acceptCompletion },
         { key: "Escape", run: closeCompletion },
+        // Les flèches parcourent la liste quand elle est affichée, et gardent
+        // sinon leur rôle.
+        { key: "ArrowDown", run: moveCompletionSelection(true) },
+        { key: "ArrowUp", run: moveCompletionSelection(false) },
       ]),
     ),
     EditorView.domEventHandlers({

@@ -160,8 +160,22 @@ function normalizeSheet(raw: unknown): Sheet | undefined {
       .filter((c): c is Record<string, unknown> => isObject(c) && typeof c.label === "string" && typeof c.value === "string")
       .map((c) => ({ label: c.label as string, value: c.value as string }));
   }
-  return isValidSheet(sheet) ? sheet : undefined;
+  if (isValidSheet(sheet)) return sheet;
+  // Une fiche dont on a effacé tous les noms garde ce qu'on y a écrit, sous
+  // un nom provisoire ; une fiche entièrement vide est écartée.
+  const hasContent =
+    TEXT_FIELDS.some((field) => sheet[field].trim() !== "") ||
+    sheet.importance !== "" ||
+    sheet.functions.length > 0 ||
+    sheet.relations.length > 0 ||
+    sheet.custom.length > 0;
+  if (!hasContent) return undefined;
+  sheet.nickname = UNNAMED;
+  return sheet;
 }
+
+// Nom donné à la relecture d'une fiche dont on a effacé tous les noms.
+export const UNNAMED = "Personnage sans nom";
 
 // Le contenu d'un fichier de fiches ; undefined s'il est illisible ou d'une
 // version que cette app ne connaît pas : il ne doit alors pas être écrasé.

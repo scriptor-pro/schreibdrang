@@ -66,3 +66,36 @@ test("ordre : qui parle le plus, puis l'entrée en scène, puis la création", (
   const order = orderedSheets([muette, claire, muet, theo, lea], speakers(play, "theatre")).map((s) => s.firstName);
   assert.deepEqual(order, ["Léa", "Théo", "Claire", "Muet", "Muette"]);
 });
+
+test("la liste est créée juste avant le premier acte, pas au-dessus d'un titre", () => {
+  const play = "LA PIÈCE\n\n# ACTE I\n\n## Scène 1\n";
+  const claire = { ...emptySheet("c", 1), firstName: "Claire" };
+  const change = castChange(play, [claire], [])!;
+  const after = play.slice(0, change.from) + change.insert + play.slice(change.to);
+  assert.equal(after, "LA PIÈCE\n\nPERSONNAGES\n\nCLAIRE\n\n# ACTE I\n\n## Scène 1\n");
+  // La réécriture suivante ne touche pas au titre.
+  assert.equal(castChange(after, [claire], []), undefined);
+});
+
+test("une pièce sans acte ni scène ne reçoit pas de liste", () => {
+  const play = "ANTOINE\nBonjour.\n";
+  assert.equal(castChange(play, [{ ...emptySheet("a", 1), firstName: "Antoine" }], []), undefined);
+  assert.equal(parseCast("PERSONNAGES\n\nANTOINE\n\nBonjour.\n"), undefined);
+});
+
+test("liste tenue par l'app : les lignes sous elle restent libres, même en capitales", () => {
+  const text = "PERSONNAGES\n\nCLAIRE\n\nLA SCÈNE EST À PARIS.\n\n# ACTE I\n";
+  const block = parseCast(text, true)!;
+  assert.deepEqual(block.entries.map((e) => e.name), ["CLAIRE"]);
+  assert.deepEqual(block.free, ["LA SCÈNE EST À PARIS."]);
+  const claire = { ...emptySheet("c", 1), firstName: "Claire" };
+  assert.equal(castChange(text, [claire], [], true), undefined);
+  // Une fiche supprimée disparaît de la liste.
+  assert.deepEqual(castChange(text, [], [], true), { from: 0, to: text.indexOf("# ACTE I"), insert: "PERSONNAGES\n\n\nLA SCÈNE EST À PARIS.\n\n" });
+});
+
+test("une fiche sans nom ne donne pas de ligne vide", () => {
+  const play = "# ACTE I\n";
+  const claire = { ...emptySheet("c", 1), firstName: "Claire" };
+  assert.equal(castChange(play, [claire, { ...emptySheet("x", 2), notes: "?" }], [])!.insert, "PERSONNAGES\n\nCLAIRE\n\n");
+});
