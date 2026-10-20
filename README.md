@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.40, testée uniquement sous Debian 12 (XFCE, X11). macOS et Windows ne sont pas testés.
+Version 0.0.40, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
 
 Ce qui fonctionne :
 
@@ -30,6 +30,58 @@ Ce qui fonctionne :
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
 Ce qui n'existe pas encore : l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
+
+## Comment installer
+
+Les paquets se téléchargent sur la page des [publications](https://github.com/scriptor-pro/schreibdrang/releases), dans la rubrique « Assets » de la dernière version. Ils ne sont pas signés : Windows et macOS affichent un avertissement à la première ouverture.
+
+### Windows
+
+1. Télécharger `schreibdrang-prototype_<version>_x64-setup.exe` (ou, au choix, le `.msi`).
+2. L'ouvrir. Si Windows affiche « Windows a protégé votre ordinateur », cliquer sur « Informations complémentaires », puis « Exécuter quand même ».
+3. Suivre l'installateur ; l'app apparaît ensuite dans le menu Démarrer.
+
+Pour les exports, installer [Pandoc](https://pandoc.org/installing.html) et, pour le PDF, [MiKTeX](https://miktex.org/download). Avec `winget` :
+
+```powershell
+winget install JohnMacFarlane.Pandoc MiKTeX.MiKTeX
+```
+
+### macOS
+
+1. Télécharger `schreibdrang-prototype_<version>_universal.dmg`, qui convient aux Mac à processeur Apple comme Intel.
+2. L'ouvrir et faire glisser l'app dans le dossier Applications.
+3. Ouvrir l'app. Si macOS la bloque : Réglages Système > Confidentialité et sécurité, puis « Ouvrir quand même » en bas de la page (macOS 15 et suivants). Sur les versions plus anciennes : clic droit sur l'app > Ouvrir > Ouvrir.
+
+Pour les exports, installer [Pandoc](https://pandoc.org/installing.html) et, pour le PDF, [MacTeX](https://www.tug.org/mactex/). Avec [Homebrew](https://brew.sh/) :
+
+```bash
+brew install pandoc
+brew install --cask mactex-no-gui
+```
+
+### Linux
+
+Pour Debian, Ubuntu et leurs dérivées, télécharger `schreibdrang-prototype_<version>_amd64.deb`, puis :
+
+```bash
+sudo apt install ./schreibdrang-prototype_<version>_amd64.deb
+```
+
+Pour les autres distributions, télécharger `schreibdrang-prototype_<version>_amd64.AppImage`, la rendre exécutable et la lancer :
+
+```bash
+chmod +x schreibdrang-prototype_<version>_amd64.AppImage
+./schreibdrang-prototype_<version>_amd64.AppImage
+```
+
+Pour les exports, installer Pandoc et XeLaTeX. Sous Debian :
+
+```bash
+sudo apt install pandoc texlive-xetex texlive-latex-extra texlive-lang-french
+```
+
+Pour compiler le prototype soi-même, voir [Prérequis](#prérequis) et [Compiler et lancer](#compiler-et-lancer) ci-dessous.
 
 ## Prérequis
 
