@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.40, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
+Version 0.0.41, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
 
 Ce qui fonctionne :
 
