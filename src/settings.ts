@@ -27,6 +27,8 @@ export interface Settings {
   apostrophe: boolean;
   // Vrai si les espaces insécables sont posées à la frappe (voir espaces.ts).
   spaces: boolean;
+  // Fiches personnage : proposer les noms pendant la frappe.
+  nameCompletion: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -43,6 +45,7 @@ export const DEFAULTS: Settings = {
   reference: "toutes",
   apostrophe: true,
   spaces: true,
+  nameCompletion: true,
 };
 
 export const MIN_SIZE = 14;
@@ -70,7 +73,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const reference = data.reference === "classique" || data.reference === "reforme" ? data.reference : DEFAULTS.reference;
   const apostrophe = flag(data.apostrophe, DEFAULTS.apostrophe);
   const spaces = flag(data.spaces, DEFAULTS.spaces);
-  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference, apostrophe, spaces };
+  const nameCompletion = flag(data.nameCompletion, DEFAULTS.nameCompletion);
+  return { theme, font, size, startup, nbsp, consignes, checkWhileTyping, grammar, spelling, typography, reference, apostrophe, spaces, nameCompletion };
 }
 
 export function loadSettings(): Settings {

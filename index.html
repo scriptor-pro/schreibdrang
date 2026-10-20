@@ -48,6 +48,7 @@
 
       <section id="view-text" hidden>
         <div id="editor"></div>
+        <aside id="people" aria-labelledby="people-title" hidden></aside>
       </section>
 
       <section id="view-board" hidden>
@@ -62,6 +63,7 @@
     </main>
 
     <footer id="footer">
+      <span id="people-proposal" role="status" hidden></span>
       <span id="counts">…</span>
       <span id="latency">Latence de frappe : —</span>
       <span id="correction-status" role="status"></span>
@@ -195,6 +197,7 @@
           <input type="number" id="setting-size" name="size" min="14" max="24" step="1" />
           <label><input type="checkbox" name="apostrophe" /> Apostrophe typographique (’) à la frappe</label>
           <label><input type="checkbox" name="spaces" /> Espaces insécables à la frappe (avant ; ! ? : », après « et dans l'heure : 15 h 35)</label>
+          <label><input type="checkbox" name="nameCompletion" /> Proposer les noms des personnages pendant la frappe</label>
         </fieldset>
         <fieldset>
           <legend>Au lancement</legend>

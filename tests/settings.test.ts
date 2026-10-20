@@ -23,6 +23,7 @@ test("des réglages valides sont conservés", () => {
     reference: "reforme",
     apostrophe: false,
     spaces: false,
+    nameCompletion: false,
   };
   assert.deepEqual(normalizeSettings(settings), settings);
 });
@@ -79,4 +80,10 @@ test("les espaces insécables sont posées à la frappe par défaut", () => {
   assert.equal(normalizeSettings({}).spaces, true);
   assert.equal(normalizeSettings({ spaces: 1 }).spaces, true);
   assert.equal(normalizeSettings({ spaces: false }).spaces, false);
+});
+
+test("l'autocomplétion des noms est active par défaut, et se désactive", () => {
+  assert.equal(normalizeSettings({}).nameCompletion, true);
+  assert.equal(normalizeSettings({ nameCompletion: false }).nameCompletion, false);
+  assert.equal(normalizeSettings({ nameCompletion: "non" }).nameCompletion, true);
 });
