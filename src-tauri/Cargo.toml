@@ -2,7 +2,7 @@
 name = "schreibdrang-prototype"
 version = "0.0.40"
 description = "Prototype Tauri de Schreibdrang"
-authors = ["you"]
+authors = ["Baudouin Van Humbeeck <bvh@etik.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
