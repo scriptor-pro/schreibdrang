@@ -26,10 +26,11 @@ Ce qui fonctionne :
 - **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
 - **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
 - **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre. Correction > Utiliser l'apostrophe typographique remplace en une fois toutes les apostrophes droites du texte. Correction > Mettre en forme les nombres ordinaux écrit « 1er », « XIXe » en « 1ᵉʳ », « XIXᵉ », que les exports mettent en exposant.
+- **Fiches personnage**, dans tous les formats sauf page blanche : un panneau à droite du texte, ouvert par Personnages > Liste des personnages (Ctrl+Maj+P) ou par un double-clic sur un nom. Les prénoms, noms et surnoms des fiches sont soulignés en pointillé dans le texte ; ils sont proposés pendant la frappe (Tab pour accepter) et acceptés par la correction. En roman et en nouvelle, un nom qui revient trois fois sans fiche est proposé dans le pied de page ; au théâtre et au scénario, chaque personnage qui parle sans fiche. Au théâtre, la liste en tête de pièce est tenue à jour à partir des fiches, le personnage qui parle le plus en premier, et une liste écrite à la main peut devenir des fiches. Au théâtre et au scénario, la fiche montre toutes les répliques du personnage.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, apostrophe typographique (’) et espaces insécables à la frappe (avant ; ! ? : », après « et dans l'heure : 15 h 35), activées par défaut, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 
-Ce qui n'existe pas encore : l'export Final Draft d'un scénario, les fiches personnage et les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
+Ce qui n'existe pas encore : l'export Final Draft d'un scénario, les apparitions des personnages, les fiches de lieu, les notes, les objectifs d'écriture, l'historique des versions, la sauvegarde vers un cloud, l'import `.epub` et Final Draft.
 
 ## Comment installer
 
@@ -82,6 +83,10 @@ sudo apt install pandoc texlive-xetex texlive-latex-extra texlive-lang-french
 ```
 
 Pour compiler le prototype soi-même, voir [Prérequis](#prérequis) et [Compiler et lancer](#compiler-et-lancer) ci-dessous.
+
+### Les fiches d'un texte
+
+Les fiches d'un texte sont rangées à côté de lui, dans un fichier du même nom terminé par `.fiches.json` (`mon-roman.md` → `mon-roman.fiches.json`) : pour copier un texte, copiez les deux fichiers.
 
 ## Prérequis
 
@@ -138,6 +143,12 @@ Le dernier script vérifie que la feuille de style respecte l'identité visuelle
 | `src/correction/` | correction : passages à relire, remarques, dictionnaires, client du moteur, soulignement et bulle |
 | `public/correction/worker.js` | le worker qui fait tourner Grammalecte |
 | `public/grammalecte/` | Grammalecte 2.3.0, embarqué |
+| `src/fiches.ts` | fiche personnage et fichier `.fiches.json` |
+| `src/fiches-noms.ts` | noms des fiches dans le texte, autocomplétion |
+| `src/fiches-detection.ts` | noms qui ressemblent à un personnage, personnages qui parlent, répliques |
+| `src/fiches-theatre.ts` | liste des personnages en tête de pièce |
+| `src/fiches-editeur.ts` | noms soulignés, double-clic, autocomplétion et protection de la liste dans l'éditeur |
+| `src/fiches-panneau.ts` | panneau des personnages |
 | `src/theatre*.ts` | format théâtre : nature des lignes, renumérotation, saisie, éditeur, traduction pour Pandoc, choix d'export retenus |
 | `scripts/make-theatre-models.py` | fabrique les modèles Word et OpenDocument des trois mises en page d'une pièce |
 | `src-tauri/resources/theatre.lua` | filtre Pandoc du PDF d'une pièce |
