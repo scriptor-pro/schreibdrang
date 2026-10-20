@@ -95,5 +95,12 @@ onmessage = (event) => {
       suggestions = suggest(message.word);
     } catch {}
     postMessage({ type: "suggestions", id: message.id, suggestions });
+  } else if (message.type === "morph") {
+    // La nature d'un mot, pour les fiches personnage : prénom, lieu, mot courant…
+    let morphs = [];
+    try {
+      morphs = speller.getMorph(message.word) || [];
+    } catch {}
+    postMessage({ type: "morphs", id: message.id, morphs });
   }
 };

@@ -7,6 +7,8 @@
 import type { EditorState, Text, TransactionSpec } from "@codemirror/state";
 import { characterNames, extractPassages } from "./extraction.ts";
 import { playCharacterNames } from "../theatre.ts";
+import { natureOf } from "../fiches-detection.ts";
+import type { WordNature } from "../fiches-detection.ts";
 import type { Passage } from "./extraction.ts";
 import { remarksOf, wordAcceptor } from "./remarques.ts";
 import type { EngineReply, Remark, RemarkFilter } from "./remarques.ts";
@@ -30,6 +32,8 @@ export interface CorrectorHost {
   settings(): Settings;
   personal(): Personal;
   textData(): TextData;
+  // Noms des fiches personnage, acceptés par l'orthographe.
+  names(): Iterable<string>;
   // Message du pied de page de la correction ; vide pour l'effacer.
   status(message: string, error?: boolean): void;
   createEngine(): EngineLike;
@@ -46,6 +50,8 @@ export class Corrector {
   #engine: EngineLike | undefined;
   // Réponse du moteur pour chaque texte de passage déjà relu.
   #replies = new Map<string, EngineReply>();
+  // Nature des mots déjà demandée, pour les fiches personnage.
+  #natures = new Map<string, WordNature>();
   // Textes des passages dont les remarques sont affichées.
   #shown = new Set<string>();
   // Change à chaque vérification, arrêt ou effacement : une réponse qui
@@ -197,6 +203,22 @@ export class Corrector {
     return passages;
   }
 
+  // Nature d'un mot pour les fiches personnage, demandée une fois par mot ;
+  // undefined si le moteur ne démarre pas. Ne lance aucune vérification.
+  async nature(word: string): Promise<WordNature | undefined> {
+    const known = this.#natures.get(word);
+    if (known) return known;
+    const engine = await this.#start();
+    if (!engine) return undefined;
+    try {
+      const nature = natureOf(await engine.morphs(word));
+      this.#natures.set(word, nature);
+      return nature;
+    } catch {
+      return undefined;
+    }
+  }
+
   // Le moteur n'est créé qu'à la première vérification.
   async #start(): Promise<EngineLike | undefined> {
     try {
@@ -228,11 +250,14 @@ export class Corrector {
     const format = this.#host.format();
     const names =
       format === "scenario" ? characterNames(state.doc.toString()) : format === "theatre" ? playCharacterNames(state.doc.toString()) : [];
+    // Les noms des fiches, entiers et mot par mot.
+    const sheetWords: string[] = [];
+    for (const name of this.#host.names()) sheetWords.push(name, ...name.split(/[\s\-‑'’]+/).filter(Boolean));
     return {
       kinds: { grammaire: settings.grammar, orthographe: settings.spelling, typographie: settings.typography },
       ignoredRules: new Set(personal.rules.map((rule) => rule.rule)),
       ignoredRemarks: new Set(text.ignored),
-      accepts: wordAcceptor(personal.words, text.words, names),
+      accepts: wordAcceptor(personal.words, text.words, names, sheetWords),
     };
   }
 

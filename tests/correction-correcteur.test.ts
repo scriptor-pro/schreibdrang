@@ -22,6 +22,10 @@ interface Options {
   // Vrai : chaque relecture attend qu'on la libère, par release().
   slow?: boolean;
   failing?: boolean;
+  // Noms des fiches personnage, acceptés par l'orthographe.
+  names?: string[];
+  // Réponses du moteur à une demande de nature, par mot.
+  morphs?: Record<string, string[]>;
 }
 
 function setup(doc: string, replies: Record<string, EngineReply> = {}, options: Options = {}) {
@@ -29,6 +33,7 @@ function setup(doc: string, replies: Record<string, EngineReply> = {}, options: 
   const statuses: [string, boolean][] = [];
   const held: (() => void)[] = [];
   const references: string[] = [];
+  const morphsAsked: string[] = [];
   let settings: Settings = { ...DEFAULTS };
   let personal = { words: [] as string[], rules: [] as { rule: string; label: string }[] };
   const view = {
@@ -47,6 +52,10 @@ function setup(doc: string, replies: Record<string, EngineReply> = {}, options: 
       return new Promise((resolve) => held.push(() => resolve(reply)));
     },
     suggest: async () => [],
+    morphs(word: string): Promise<string[]> {
+      morphsAsked.push(word);
+      return Promise.resolve(options.morphs?.[word] ?? []);
+    },
     setReference(reference: string) {
       references.push(reference);
     },
@@ -57,6 +66,7 @@ function setup(doc: string, replies: Record<string, EngineReply> = {}, options: 
     settings: () => settings,
     personal: () => personal,
     textData: () => ({ words: [], ignored: [] }),
+    names: () => options.names ?? [],
     status: (message, error = false) => statuses.push([message, error]),
     createEngine: () => engine,
   });
@@ -65,6 +75,7 @@ function setup(doc: string, replies: Record<string, EngineReply> = {}, options: 
     asked,
     statuses,
     references,
+    morphsAsked,
     corrector,
     remarks: () => view.state.field(correctionField).remarks.map((r) => view.state.sliceDoc(r.from, r.to)),
     set: (changes: Partial<Settings>) => (settings = { ...settings, ...changes }),
@@ -249,4 +260,26 @@ test("théâtre : les noms des personnages sont acceptés par l'orthographe", as
   assert.deepEqual(s.remarks(), []);
   assert.ok(!s.asked.includes("MARC"));
   assert.ok(!s.asked.includes("ACTE I"));
+});
+
+test("les noms des fiches personnage sont acceptés par l'orthographe", async () => {
+  const doc = "Lucien Vasseur sourit.";
+  const reply = { grammar: [], spelling: [{ start: 0, end: 6, word: "Lucien" }, { start: 7, end: 14, word: "Vasseur" }] };
+  const s = setup(doc, { [doc]: reply }, { names: ["Lucien Vasseur"] });
+  await s.corrector.check();
+  assert.deepEqual(s.remarks(), []);
+});
+
+test("la nature d'un mot est demandée une fois au moteur", async () => {
+  const s = setup("", {}, { morphs: { Lucien: [">Lucien/:M1:m:i/*"], Lyon: [">Lyon/:MP:e:i#C/*"] } });
+  assert.equal(await s.corrector.nature("Lucien"), "prenom");
+  assert.equal(await s.corrector.nature("Lucien"), "prenom");
+  assert.equal(await s.corrector.nature("Lyon"), "lieu");
+  assert.equal(await s.corrector.nature("Zorglub"), "inconnu");
+  assert.deepEqual(s.morphsAsked, ["Lucien", "Lyon", "Zorglub"]);
+});
+
+test("sans moteur, la nature d'un mot est inconnue", async () => {
+  const s = setup("", {}, { failing: true });
+  assert.equal(await s.corrector.nature("Lucien"), undefined);
 });

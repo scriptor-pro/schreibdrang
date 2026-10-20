@@ -75,3 +75,10 @@ test("les mots composés absents du dictionnaire sont signalés", () => {
   const reply = relire(7, "Il prit le porte-chaussure.");
   assert.deepEqual(reply.grammar.map((e) => [e.start, e.end, e.type]), [[11, 26, "mc"]]);
 });
+
+test("la nature d'un mot est donnée à la demande", () => {
+  worker.envoyer({ type: "morph", id: 8, word: "Lucien" });
+  assert.deepEqual(worker.recus.pop(), { type: "morphs", id: 8, morphs: [">Lucien/:M1:m:i/*"] });
+  worker.envoyer({ type: "morph", id: 9, word: "Zorglub" });
+  assert.deepEqual(worker.recus.pop(), { type: "morphs", id: 9, morphs: [] });
+});

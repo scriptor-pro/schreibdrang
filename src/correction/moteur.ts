@@ -18,6 +18,7 @@ export interface EngineLike {
   readonly ready: Promise<void>;
   check(text: string): Promise<EngineReply>;
   suggest(word: string): Promise<string[]>;
+  morphs(word: string): Promise<string[]>;
   setReference(reference: Reference): void;
 }
 
@@ -25,7 +26,8 @@ type WorkerMessage =
   | { type: "ready" }
   | { type: "failed"; message: string }
   | { type: "checked"; id: number; grammar: GrammarError[]; spelling: UnknownWord[] }
-  | { type: "suggestions"; id: number; suggestions: string[] };
+  | { type: "suggestions"; id: number; suggestions: string[] }
+  | { type: "morphs"; id: number; morphs: string[] };
 
 interface Pending {
   resolve(value: unknown): void;
@@ -64,7 +66,9 @@ export class Engine implements EngineLike {
       } else {
         const pending = this.#pending.get(data.id);
         this.#pending.delete(data.id);
-        pending?.resolve(data.type === "checked" ? { grammar: data.grammar, spelling: data.spelling } : data.suggestions);
+        pending?.resolve(
+          data.type === "checked" ? { grammar: data.grammar, spelling: data.spelling } : data.type === "morphs" ? data.morphs : data.suggestions,
+        );
       }
     };
     this.#worker.onerror = (event) => fail(new Error(event.message || "le correcteur n'a pas pu être chargé"));
@@ -86,6 +90,11 @@ export class Engine implements EngineLike {
 
   suggest(word: string): Promise<string[]> {
     return this.#ask<string[]>({ type: "suggest", word });
+  }
+
+  // La nature d'un mot selon le dictionnaire (« >Lucien/:M1:m:i/* »…).
+  morphs(word: string): Promise<string[]> {
+    return this.#ask<string[]>({ type: "morph", word });
   }
 
   setReference(reference: Reference) {

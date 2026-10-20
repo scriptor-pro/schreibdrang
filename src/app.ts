@@ -1193,6 +1193,8 @@ const corrector = new Corrector({
   settings: () => settings,
   personal: () => personal,
   textData: () => currentTextData,
+  // Les noms des fiches personnage sont branchés avec le panneau.
+  names: () => [],
   status: setCorrectionStatus,
   // Le worker n'est créé qu'à la première vérification.
   createEngine: () => new Engine(() => new Worker("/correction/worker.js")),
