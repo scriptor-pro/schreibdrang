@@ -70,6 +70,15 @@ import {
   withTextData,
 } from "./correction/dictionnaires";
 import type { TextData } from "./correction/dictionnaires";
+import { emptySheetsFile, newSheetId, normalizeSheetsFile, serializeSheets, sheetNames, sidecarPath } from "./fiches";
+import type { Sheet, SheetsFile } from "./fiches";
+import { fold } from "./fiches-noms";
+import { PROPOSAL_THRESHOLD, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
+import type { Candidate, Reply, Speaker } from "./fiches-detection";
+import { castChange, importCast, parseCast } from "./fiches-theatre";
+import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
+import type { PeopleHost } from "./fiches-editeur";
+import { createPanel } from "./fiches-panneau";
 
 // Les réglages ont déjà été appliqués par main.ts.
 let settings: Settings = loadSettings();
@@ -1052,6 +1061,67 @@ const correctionActions: CorrectionActions = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Fiches personnage : rangées à côté du texte, dans <nom>.fiches.json
+// ---------------------------------------------------------------------------
+
+let currentFiches: SheetsFile = emptySheetsFile();
+// Le fichier des fiches existe mais ne se lit pas : il ne sera pas écrasé.
+let fichesBlocked = false;
+// Le fichier des fiches existait à l'ouverture, ou les fiches ont changé
+// depuis : il faut l'écrire à l'enregistrement, même vide.
+let fichesToWrite = false;
+
+const PROTECTED_MESSAGE = "La liste des personnages se modifie par les fiches : Personnages > Liste des personnages.";
+
+// Rien des fiches n'agit au format page blanche.
+function peopleEnabled(): boolean {
+  return currentFormat !== "vanilla";
+}
+
+// Au théâtre, l'app tient la liste en tête de pièce quand l'auteur l'a accepté.
+function castManaged(): boolean {
+  return currentFormat === "theatre" && currentFiches.listeTenue === true;
+}
+
+// La partie protégée de la liste, recalculée seulement quand le texte change.
+let protectedCache: { doc: unknown; range: { from: number; to: number } | undefined } | undefined;
+
+function protectedRange(): { from: number; to: number } | undefined {
+  if (!castManaged()) return undefined;
+  const doc = view.state.doc;
+  if (protectedCache?.doc !== doc) {
+    const block = parseCast(doc.toString());
+    protectedCache = { doc, range: block ? { from: block.from, to: block.generatedTo } : undefined };
+  }
+  return protectedCache.range;
+}
+
+const peopleHost: PeopleHost = {
+  sheets: () => (peopleEnabled() ? currentFiches.personnages : []),
+  format: () => currentFormat,
+  enabled: peopleEnabled,
+  completion: () => settings.nameCompletion,
+  open: (ids) => openSheets(ids, false),
+  typedWord: (candidate) => void proposeForWord(candidate),
+  protectedRange,
+  refused: () => setStatus(PROTECTED_MESSAGE),
+};
+
+// Au théâtre et au scénario : quand le curseur change de ligne, les
+// personnages qui parlent sans fiche sont proposés.
+let lastPeopleLine = -1;
+let speakerTimer: number | undefined;
+const peopleWatcher = EditorView.updateListener.of((update) => {
+  if (currentFormat !== "theatre" && currentFormat !== "scenario") return;
+  if (!update.selectionSet && !update.docChanged) return;
+  const line = update.state.doc.lineAt(update.state.selection.main.head).number;
+  if (line === lastPeopleLine) return;
+  lastPeopleLine = line;
+  window.clearTimeout(speakerTimer);
+  speakerTimer = window.setTimeout(proposeForSpeakers, 400);
+});
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
@@ -1160,6 +1230,8 @@ function createState(doc: string): EditorState {
       nbspMarks.of(settings.nbsp ? showNbsp : []),
       typographyInput,
       correctionExtension(correctionActions),
+      peopleExtension(peopleHost),
+      peopleWatcher,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
         keydown() {
@@ -1193,14 +1265,346 @@ const corrector = new Corrector({
   settings: () => settings,
   personal: () => personal,
   textData: () => currentTextData,
-  // Les noms des fiches personnage sont branchés avec le panneau.
-  names: () => [],
+  // Les noms des fiches personnage sont acceptés par l'orthographe.
+  names: () => (peopleEnabled() ? currentFiches.personnages.flatMap(sheetNames) : []),
   status: setCorrectionStatus,
   // Le worker n'est créé qu'à la première vérification.
   createEngine: () => new Engine(() => new Worker("/correction/worker.js")),
 });
 
 scheduleCounts(view);
+
+// ---------------------------------------------------------------------------
+// Fiches personnage : panneau, propositions, liste en tête de pièce
+// ---------------------------------------------------------------------------
+
+const peopleRoot = document.querySelector<HTMLElement>("#people")!;
+const proposalEl = document.querySelector<HTMLSpanElement>("#people-proposal")!;
+// La fiche affichée dans le panneau, pour Personnages > Afficher les répliques.
+let shownSheet: string | undefined;
+
+const panel = createPanel(peopleRoot, {
+  file: () => currentFiches,
+  changed(file, cast) {
+    currentFiches = file;
+    fichesToWrite = true;
+    sheetsAdded();
+    setDirty(true);
+    view.dispatch({ effects: refreshNames.of(null) });
+    if (cast) rewriteCast();
+  },
+  replies: (sheet) => repliesOf(sheet),
+  castOffer: () => (currentFormat === "theatre" && currentFiches.listeTenue === false ? () => offerCastImport() : undefined),
+  goTo(pos) {
+    view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+    view.focus();
+  },
+  shown(id) {
+    shownSheet = id;
+    view.dispatch({ effects: activeSheet.of(id) });
+  },
+  closed: () => view.focus(),
+});
+
+// Les répliques d'un personnage, au scénario et au théâtre.
+function repliesOf(sheet: Sheet): Reply[] | undefined {
+  if (currentFormat !== "theatre" && currentFormat !== "scenario") return undefined;
+  const sheets = currentFiches.personnages;
+  return speakers(view.state.doc.toString(), currentFormat)
+    .filter((speaker) => speakerSheet(speaker, sheets)?.id === sheet.id)
+    .flatMap((speaker) => speaker.replies)
+    .sort((a, b) => a.from - b.from);
+}
+
+// Un double-clic ou une commande : une fiche, ou le choix entre plusieurs.
+function openSheets(ids: string[], focus: boolean) {
+  if (ids.length > 1) panel.showChoice(ids);
+  else if (ids.length === 1) panel.showSheet(ids[0], focus);
+}
+
+// Une pièce sans liste écrite à la main : l'app la tient dès la première fiche.
+function sheetsAdded() {
+  if (currentFormat !== "theatre" || currentFiches.listeTenue !== null || currentFiches.personnages.length === 0) return;
+  const block = parseCast(view.state.doc.toString());
+  if (!block || block.entries.length === 0) currentFiches.listeTenue = true;
+}
+
+// Refait la liste en tête de pièce à partir des fiches, si l'app la tient.
+// Une réécriture s'annule par Ctrl + Z comme une modification du texte.
+function rewriteCast() {
+  if (!castManaged()) return;
+  const text = view.state.doc.toString();
+  const change = castChange(text, currentFiches.personnages, speakers(text, "theatre"));
+  if (change) view.dispatch({ changes: change, annotations: castRewrite.of(true) });
+}
+
+// Une proposition dans le pied de page : du texte, et des actions au clavier.
+interface Proposal {
+  text: string;
+  actions: { label: string; run: () => void }[];
+}
+
+function proposeInFooter(proposal: Proposal | undefined) {
+  proposalEl.replaceChildren();
+  proposalEl.hidden = !proposal;
+  if (!proposal) return;
+  proposalEl.append(proposal.text);
+  for (const action of proposal.actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      proposeInFooter(undefined);
+      action.run();
+      if (!panel.isOpen() || !peopleRoot.contains(document.activeElement)) view.focus();
+    });
+    proposalEl.append(button);
+  }
+}
+
+// Ajoute des fiches, sans ouvrir le panneau.
+function addSheets(sheets: Sheet[]) {
+  if (sheets.length === 0) return;
+  currentFiches.personnages.push(...sheets);
+  fichesToWrite = true;
+  sheetsAdded();
+  setDirty(true);
+  view.dispatch({ effects: refreshNames.of(null) });
+  rewriteCast();
+  panel.refresh();
+}
+
+function ignoreWord(word: string) {
+  if (!currentFiches.ecartes.some((item) => fold(item) === fold(word))) currentFiches.ecartes.push(word);
+  fichesToWrite = true;
+  setDirty(true);
+  panel.refresh();
+}
+
+// Le nombre d'occurrences d'un mot quand il a été proposé sans réponse : il
+// n'est reproposé qu'à son occurrence suivante.
+const proposedWords = new Map<string, number>();
+
+// Roman et nouvelle : à la troisième apparition d'un mot qui ressemble à un
+// nom de personnage, sans fiche.
+async function proposeForWord(candidate: Candidate) {
+  if (currentFormat !== "roman" && currentFormat !== "nouvelle") return;
+  const { word } = candidate;
+  if (!mayBeCharacter(word, currentFiches.personnages, currentFiches.ecartes)) return;
+  const text = view.state.doc.toString();
+  if (isSentenceStart(text, candidate.from)) return;
+  const count = occurrences(text, word);
+  if (count < PROPOSAL_THRESHOLD || count <= (proposedWords.get(word) ?? 0)) return;
+  const nature = await corrector.nature(word);
+  if (nature !== "prenom" && nature !== "inconnu") return;
+  // Le temps de la réponse du moteur, la fiche a pu être créée ou le mot écarté.
+  if (!mayBeCharacter(word, currentFiches.personnages, currentFiches.ecartes)) return;
+  proposedWords.set(word, count);
+  proposeInFooter({
+    text: `“${word}” ressemble à un personnage.`,
+    actions: [
+      { label: "Créer sa fiche", run: () => panel.newSheet(word, false) },
+      { label: "Ignorer", run: () => ignoreWord(word) },
+    ],
+  });
+}
+
+// Les personnages qui parlent sans fiche et que l'auteur n'a ni écartés ni
+// remis à plus tard.
+const deferredSpeakers = new Set<string>();
+
+function speakersWithoutSheet(): Speaker[] {
+  if (currentFormat !== "theatre" && currentFormat !== "scenario") return [];
+  const sheets = currentFiches.personnages;
+  const ignored = new Set(currentFiches.ecartes.map(fold));
+  return speakers(view.state.doc.toString(), currentFormat).filter(
+    (speaker) => !speakerSheet(speaker, sheets) && !ignored.has(fold(speaker.label)) && !deferredSpeakers.has(fold(speaker.label)),
+  );
+}
+
+function proposeForSpeakers() {
+  if (!proposalEl.hidden) return;
+  const speaker = speakersWithoutSheet()[0];
+  if (!speaker) return;
+  proposeInFooter({
+    text: `“${speaker.label}” n'a pas de fiche.`,
+    actions: [
+      { label: "Créer sa fiche", run: () => addSheets([sheetFromLabel(speaker.label, newSheetId(), Date.now())]) },
+      {
+        label: "Ignorer",
+        run: () => {
+          ignoreWord(speaker.label);
+          proposeForSpeakers();
+        },
+      },
+    ],
+  });
+}
+
+// Au théâtre : faire des fiches d'une liste écrite à la main, ou non.
+function offerCastImport() {
+  const block = parseCast(view.state.doc.toString());
+  if (!block || block.entries.length === 0) {
+    currentFiches.listeTenue = true;
+    fichesToWrite = true;
+    setDirty(true);
+    rewriteCast();
+    panel.refresh();
+    return;
+  }
+  proposeInFooter({
+    text: "Faire des fiches de la liste des personnages ?",
+    actions: [
+      {
+        label: "Oui",
+        run: () => {
+          // Les entrées qui ont déjà une fiche n'en reçoivent pas une seconde.
+          const missing = { ...block, entries: block.entries.filter((entry) => !speakerSheet({ label: entry.name, words: 0, first: 0, replies: [] }, currentFiches.personnages)) };
+          currentFiches.listeTenue = true;
+          addSheets(importCast(missing, newSheetId, Date.now()));
+          fichesToWrite = true;
+          setDirty(true);
+          rewriteCast();
+          panel.refresh();
+          proposeGrouped();
+        },
+      },
+      {
+        label: "Non",
+        run: () => {
+          currentFiches.listeTenue = false;
+          fichesToWrite = true;
+          setDirty(true);
+          panel.refresh();
+          proposeGrouped();
+        },
+      },
+    ],
+  });
+}
+
+// À l'ouverture d'une pièce ou d'un scénario : une seule proposition pour
+// tous les personnages qui parlent sans fiche.
+function proposeGrouped() {
+  const missing = speakersWithoutSheet();
+  if (missing.length < 2) {
+    proposeForSpeakers();
+    return;
+  }
+  proposeInFooter({
+    text: missing.length === 1 ? "1 personnage n'a pas de fiche." : `${missing.length} personnages n'ont pas de fiche.`,
+    actions: [
+      { label: "Les créer", run: () => addSheets(missing.map((speaker, i) => sheetFromLabel(speaker.label, newSheetId(), Date.now() + i))) },
+      { label: "Plus tard", run: () => missing.forEach((speaker) => deferredSpeakers.add(fold(speaker.label))) },
+    ],
+  });
+}
+
+// Les propositions à l'ouverture d'un texte.
+function openingProposals() {
+  if (currentFormat === "theatre" && currentFiches.listeTenue === null && currentFiches.personnages.length === 0) {
+    const block = parseCast(view.state.doc.toString());
+    if (block && block.entries.length > 0) {
+      offerCastImport();
+      return;
+    }
+  }
+  if (currentFormat === "theatre" || currentFormat === "scenario") proposeGrouped();
+}
+
+// Lit les fiches d'un texte, à côté de lui. Un fichier illisible n'est pas
+// écrasé : les fiches de ce texte restent alors en lecture seule.
+let fichesGeneration = 0;
+
+async function loadFiches(path: string | undefined) {
+  const generation = ++fichesGeneration;
+  currentFiches = emptySheetsFile();
+  fichesBlocked = false;
+  fichesToWrite = false;
+  proposedWords.clear();
+  deferredSpeakers.clear();
+  proposeInFooter(undefined);
+  if (panel.isOpen()) panel.close();
+  if (path) {
+    const sidecar = sidecarPath(path);
+    try {
+      const raw = await invoke<string | null>("read_optional_text_file", { path: sidecar });
+      if (generation !== fichesGeneration) return;
+      if (raw !== null) {
+        const file = normalizeSheetsFile(raw);
+        if (file) {
+          currentFiches = file;
+          fichesToWrite = true;
+        } else {
+          fichesBlocked = true;
+          setStatus(`le fichier des fiches (${sidecar}) est illisible : il ne sera pas modifié`, true);
+        }
+      }
+    } catch (error) {
+      if (generation !== fichesGeneration) return;
+      fichesBlocked = true;
+      setStatus(`le fichier des fiches (${sidecar}) n'a pas pu être lu (${error}) : il ne sera pas modifié`, true);
+    }
+  }
+  view.dispatch({ effects: refreshNames.of(null) });
+  if (peopleEnabled()) openingProposals();
+}
+
+// Écrit les fiches à côté du texte ; une erreur ne défait pas l'enregistrement du texte.
+async function writeFiches(path: string) {
+  if (fichesBlocked) return;
+  const file = currentFiches;
+  if (!fichesToWrite && file.personnages.length === 0 && file.ecartes.length === 0 && file.listeTenue === null) return;
+  const sidecar = sidecarPath(path);
+  try {
+    await invoke("write_text_file", { path: sidecar, contents: serializeSheets(file) });
+    fichesToWrite = true;
+  } catch (error) {
+    setStatus(`les fiches n'ont pas pu être enregistrées dans ${sidecar} (${error})`, true);
+  }
+}
+
+// Menu Personnages : inactif au format page blanche ; les répliques
+// n'existent qu'au scénario et au théâtre.
+function refreshPeopleMenu() {
+  const enabled = peopleEnabled();
+  for (const id of ["people-list", "people-new", "people-open"]) {
+    invoke("set_menu_item_enabled", { id, enabled }).catch((error) => setStatus(`le menu Personnages n'a pas pu être mis à jour (${error})`, true));
+  }
+  invoke("set_menu_item_enabled", { id: "people-replies", enabled: currentFormat === "theatre" || currentFormat === "scenario" }).catch((error) =>
+    setStatus(`le menu Personnages n'a pas pu être mis à jour (${error})`, true),
+  );
+  if (!enabled) {
+    if (panel.isOpen()) panel.close();
+    proposeInFooter(undefined);
+  }
+}
+
+// Le mot sélectionné, ou celui sous le curseur, pour préremplir une fiche.
+function wordForNewSheet(): string | undefined {
+  const { from, to, head } = view.state.selection.main;
+  if (from !== to) {
+    const selected = view.state.sliceDoc(from, to).trim();
+    return selected && !selected.includes("\n") ? selected : undefined;
+  }
+  const range = view.state.wordAt(head);
+  return range ? view.state.sliceDoc(range.from, range.to) : undefined;
+}
+
+const PEOPLE_ACTIONS: Record<string, () => void> = {
+  "people-list": () => panel.showList(),
+  "people-new": () => panel.newSheet(wordForNewSheet(), true),
+  "people-open": () => {
+    const hit = nameAtCursor(view, currentFiches.personnages);
+    if (!hit) setStatus("Aucun nom de personnage sous le curseur.");
+    else openSheets(hit.ids, true);
+  },
+  "people-replies": () => {
+    const id = shownSheet ?? nameAtCursor(view, currentFiches.personnages)?.ids[0];
+    if (!id) setStatus("Ouvre d'abord une fiche, ou place le curseur sur un nom de personnage.");
+    else panel.showReplies(id);
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Cork board : construit à partir du texte, et réécrit le texte à chaque dépôt
@@ -1686,6 +2090,9 @@ function loadDocument(text: string, path: string | undefined, format: Format, ch
   currentPath = path;
   importName = undefined;
   refreshFormatMenu();
+  refreshPeopleMenu();
+  lastPeopleLine = -1;
+  void loadFiches(path);
   setDirty(false);
   samples.length = 0;
   keyTime = 0;
@@ -1783,6 +2190,8 @@ function requestOpenDocument() {
 }
 
 async function writeDocument(path: string) {
+  // La liste en tête de pièce est mise à jour avant d'être enregistrée.
+  rewriteCast();
   // Le texte est relevé avant l'écriture : une frappe pendant l'enregistrement
   // laisse le texte marqué comme modifié.
   const text = view.state.doc.toString();
@@ -1805,6 +2214,8 @@ async function writeDocument(path: string) {
     setStatus(savedMessage(now, now, path));
     // Le chemin complet reste lisible au survol.
     fileStatus.title = path;
+    // Les fiches suivent le texte, dans un fichier à côté de lui.
+    await writeFiches(path);
   } catch (error) {
     setStatus(`l'enregistrement a échoué (${error})`, true);
   }
@@ -1965,6 +2376,8 @@ exportDialog.addEventListener("close", async () => {
   setStatus(`Export ${FORMATS[format]} en cours…`);
   const start = performance.now();
   try {
+    // La liste en tête de pièce est mise à jour avant l'export.
+    if (currentFormat === "theatre") rewriteCast();
     if (currentFormat === "theatre" && playExportKind(format) === "layout") {
       const choice = chosenPlayExport();
       if (currentPath) {
@@ -2075,6 +2488,8 @@ function chooseFormat() {
     view.setState(createState(text));
     setDirty(modified);
     scheduleCounts(view);
+    refreshPeopleMenu();
+    if (peopleEnabled()) openingProposals();
     if (currentPath) rememberRecent(currentPath);
     setStatus(`Ce texte est maintenant au format ${FORMAT_NAMES[format]}.`);
     view.focus();
@@ -2278,6 +2693,7 @@ async function openSettings() {
   }
   settingsForm.querySelector<HTMLInputElement>('input[name="apostrophe"]')!.checked = settings.apostrophe;
   settingsForm.querySelector<HTMLInputElement>('input[name="spaces"]')!.checked = settings.spaces;
+  settingsForm.querySelector<HTMLInputElement>('input[name="nameCompletion"]')!.checked = settings.nameCompletion;
   renderIgnoredRules();
   sizeInput.value = String(settings.size);
   fillFontSelect([]);
@@ -2304,6 +2720,7 @@ settingsForm.addEventListener("change", () => {
     consignes: settings.consignes,
     apostrophe: data.get("apostrophe") === "on",
     spaces: data.get("spaces") === "on",
+    nameCompletion: data.get("nameCompletion") === "on",
     checkWhileTyping: data.get("checkWhileTyping") === "on",
     grammar: data.get("grammar") === "on",
     spelling: data.get("spelling") === "on",
@@ -2693,6 +3110,7 @@ const ACTIONS: Record<string, () => void> = {
   "scenario-model": chooseModel,
   "theatre-renumber": renumberActsAndScenes,
   "help-about": openAbout,
+  ...PEOPLE_ACTIONS,
 };
 
 // Actions du menu Fichier sans objet tant qu'il n'y a aucun texte ; leurs
@@ -2752,6 +3170,21 @@ function runAction(id: string) {
   if (id === "view-board" && currentFormat === "vanilla") {
     setStatus("Le format page blanche n'a pas de cork board : le texte est d'un seul tenant.");
     return;
+  }
+  if (id.startsWith("people-")) {
+    if (nothingToSave()) {
+      setStatus("Il n'y a pas encore de texte : crée ou ouvre d'abord un texte.");
+      return;
+    }
+    if (!peopleEnabled()) {
+      setStatus("Les fiches personnage n'existent pas au format page blanche.");
+      return;
+    }
+    if (id === "people-replies" && currentFormat !== "theatre" && currentFormat !== "scenario") {
+      setStatus("Les répliques sont propres au scénario et au théâtre.");
+      return;
+    }
+    if (viewText.hidden) show("text");
   }
   if (NEEDS_TEXT.has(id) && nothingToSave()) {
     setStatus("Il n'y a pas encore de texte : crée ou ouvre d'abord un texte.");
