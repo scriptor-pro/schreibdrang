@@ -104,21 +104,33 @@ test("deux personnages qui parlent ensemble ne sont pas un troisième", () => {
 });
 
 test("les personnages qui parlent se trouvent vite dans une longue pièce", () => {
-  let play = "";
-  for (let act = 1; act <= 5; act++) {
-    play += `# ACTE ${act}\n\n`;
-    for (let scene = 1; scene <= 8; scene++) {
-      play += `## Scène ${scene}\n\n`;
-      for (let i = 0; i < 100; i++) play += `${i % 2 ? "CLAIRE" : "THÉO"}\nUne réplique de quelques mots, pas plus.\n\n`;
+  const play = (acts: number) => {
+    let text = "";
+    for (let act = 1; act <= acts; act++) {
+      text += `# ACTE ${act}\n\n`;
+      for (let scene = 1; scene <= 8; scene++) {
+        text += `## Scène ${scene}\n\n`;
+        for (let i = 0; i < 100; i++) text += `${i % 2 ? "CLAIRE" : "THÉO"}\nUne réplique de quelques mots, pas plus.\n\n`;
+      }
     }
-  }
-  let best = Infinity;
-  for (let i = 0; i < 3; i++) {
-    const start = performance.now();
-    const list = speakers(play, "theatre");
-    best = Math.min(best, performance.now() - start);
-    assert.equal(list[0].replies.length, 2000);
-    assert.equal(list[0].replies[1999].where, "Acte 5, scène 8");
-  }
-  assert.ok(best < 150, `${Math.round(best)} ms`);
+    return text;
+  };
+  const best = (text: string) => {
+    let time = Infinity;
+    for (let i = 0; i < 5; i++) {
+      const start = performance.now();
+      speakers(text, "theatre");
+      time = Math.min(time, performance.now() - start);
+    }
+    return time;
+  };
+  const list = speakers(play(5), "theatre");
+  assert.equal(list[0].replies.length, 2000);
+  assert.equal(list[0].replies[1999].where, "Acte 5, scène 8");
+  // Dix actes, 8 000 répliques : environ 75 ms (mesuré le 20 octobre 2026),
+  // contre 500 ms quand la position était cherchée pour chaque réplique. Les
+  // autres fichiers de tests tournent en même temps : le seuil ne retient
+  // que les vraies lenteurs.
+  const time = best(play(10));
+  assert.ok(time < 400, `${Math.round(time)} ms`);
 });
