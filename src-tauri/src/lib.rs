@@ -741,6 +741,17 @@ fn read_text_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Lit un fichier qui peut ne pas exister, comme celui des fiches d'un texte :
+/// rien s'il est absent, une erreur s'il existe sans pouvoir être lu.
+#[tauri::command]
+fn read_optional_text_file(path: String) -> Result<Option<String>, String> {
+    match fs::read_to_string(&path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     // Écriture dans un fichier voisin, puis renommage : une panne en cours
@@ -865,6 +876,24 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .build(app)?;
     let theatre = SubmenuBuilder::new(app, "Théâtre").item(&renumber).build()?;
 
+    // Inactives au lancement : la page les active sur un texte qui a des
+    // fiches personnage (tous les formats sauf page blanche).
+    let people_item = |id: &str, label: &str, shortcut: Option<&str>| {
+        let builder = MenuItemBuilder::with_id(id, label).enabled(false);
+        match shortcut {
+            Some(keys) => builder.accelerator(keys),
+            None => builder,
+        }
+        .build(app)
+    };
+    let people = SubmenuBuilder::new(app, "Personnages")
+        .item(&people_item("people-list", "Liste des personnages", Some("CmdOrCtrl+Shift+P"))?)
+        .item(&people_item("people-new", "Nouveau personnage", None)?)
+        .item(&people_item("people-open", "Ouvrir la fiche du nom sous le curseur", Some("CmdOrCtrl+Shift+F"))?)
+        .separator()
+        .item(&people_item("people-replies", "Afficher les répliques", None)?)
+        .build()?;
+
     // Inactives au lancement, sur l'accueil : la page les active sur la vue Texte.
     let correction_item = |id: &str, label: &str, shortcut: Option<&str>| {
         let builder = MenuItemBuilder::with_id(id, label).enabled(false);
@@ -897,7 +926,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("help-about", "À propos de Schreibdrang", None)?)
         .build()?;
 
-    MenuBuilder::new(app).items(&[&file, &edit, &view, &correction, &screenplay, &theatre, &help]).build()
+    MenuBuilder::new(app).items(&[&file, &edit, &view, &correction, &screenplay, &theatre, &people, &help]).build()
 }
 
 /// Active ou désactive une entrée de la barre de menu, cherchée dans chaque menu.
@@ -964,6 +993,7 @@ pub fn run() {
             export_cover,
             export_screenplay,
             read_text_file,
+            read_optional_text_file,
             file_modified,
             write_text_file,
             list_monospace_fonts,
@@ -978,6 +1008,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fichier_absent_ou_present() {
+        let dir = std::env::temp_dir().join(format!("schreibdrang-fiches-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let absent = dir.join("absent.fiches.json");
+        assert_eq!(read_optional_text_file(absent.display().to_string()), Ok(None));
+        let present = dir.join("present.fiches.json");
+        fs::write(&present, "{\"version\":1}").unwrap();
+        assert_eq!(read_optional_text_file(present.display().to_string()), Ok(Some("{\"version\":1}".to_string())));
+        // Un dossier à la place du fichier : il existe mais ne se lit pas.
+        assert!(read_optional_text_file(dir.display().to_string()).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     /// Le contenu d'un fichier d'une archive embarquée.
     fn part(archive: &str, name: &str) -> String {
