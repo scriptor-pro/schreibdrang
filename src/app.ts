@@ -2744,11 +2744,11 @@ function runAction(id: string) {
     return;
   }
   if (id === "file-layout" && currentFormat !== "vanilla") {
-    setStatus("La mise en page se règle au format vanilla.");
+    setStatus("La mise en page se règle au format page blanche.");
     return;
   }
   if (id === "view-board" && currentFormat === "vanilla") {
-    setStatus("Le format vanilla n'a pas de cork board : le texte est d'un seul tenant.");
+    setStatus("Le format page blanche n'a pas de cork board : le texte est d'un seul tenant.");
     return;
   }
   if (NEEDS_TEXT.has(id) && nothingToSave()) {
