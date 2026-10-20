@@ -73,7 +73,7 @@ import type { TextData } from "./correction/dictionnaires";
 import { emptySheetsFile, newSheetId, normalizeSheetsFile, serializeSheets, sheetNames, sidecarPath } from "./fiches";
 import type { Sheet, SheetsFile } from "./fiches";
 import { fold } from "./fiches-noms";
-import { PROPOSAL_THRESHOLD, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
+import { PROPOSAL_THRESHOLD, isGroup, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
 import type { Candidate, Reply, Speaker } from "./fiches-detection";
 import { castChange, importCast, parseCast } from "./fiches-theatre";
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
@@ -1417,8 +1417,10 @@ function speakersWithoutSheet(): Speaker[] {
   if (currentFormat !== "theatre" && currentFormat !== "scenario") return [];
   const sheets = currentFiches.personnages;
   const ignored = new Set(currentFiches.ecartes.map(fold));
-  return speakers(view.state.doc.toString(), currentFormat).filter(
-    (speaker) => !speakerSheet(speaker, sheets) && !ignored.has(fold(speaker.label)) && !deferredSpeakers.has(fold(speaker.label)),
+  const all = speakers(view.state.doc.toString(), currentFormat);
+  return all.filter(
+    (speaker) =>
+      !speakerSheet(speaker, sheets) && !isGroup(speaker, sheets, all) && !ignored.has(fold(speaker.label)) && !deferredSpeakers.has(fold(speaker.label)),
   );
 }
 

@@ -165,6 +165,16 @@ export function speakerSheet(speaker: Speaker, sheets: Sheet[]): Sheet | undefin
   });
 }
 
+// Une réplique dite à plusieurs (« ANTOINE ET JOSÉPHINE ») : chaque nom a sa
+// fiche, ou parle aussi seul dans le texte ; l'ensemble n'est pas un
+// personnage de plus.
+export function isGroup(speaker: Speaker, sheets: Sheet[], others: Speaker[] = []): boolean {
+  const parts = speaker.label.split(/\s+(?:ET|&)\s+|\s*,\s*/u).filter(Boolean);
+  if (parts.length < 2) return false;
+  const alone = new Set(others.map((other) => fold(other.label)));
+  return parts.every((part) => alone.has(fold(part)) || speakerSheet({ ...speaker, label: part }, sheets) !== undefined);
+}
+
 const ARTICLE_OR_NUMBER = /^(le|la|les|l|un|une|des|du|de|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|\d+)$/iu;
 
 const capitalize = (word: string) =>

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { emptySheet } from "../src/fiches.ts";
 import type { Sheet } from "../src/fiches.ts";
 import {
+  isGroup,
   isSentenceStart,
   mayBeCharacter,
   natureOf,
@@ -84,4 +85,20 @@ test("fiche à partir d'un nom en capitales", () => {
   assert.deepEqual(pick(sheetFromLabel("DEUX GARDES", "a", 1)), ["", "", "Deux gardes"]);
   assert.deepEqual(pick(sheetFromLabel("LA COMTESSE", "a", 1)), ["", "", "La comtesse"]);
   assert.deepEqual(pick(sheetFromLabel("JEAN-PIERRE", "a", 1)), ["Jean-Pierre", "", ""]);
+});
+
+test("deux personnages qui parlent ensemble ne sont pas un troisième", () => {
+  const antoine = { ...emptySheet("a", 1), firstName: "Antoine", lastName: "Delorme" };
+  const josephine = { ...emptySheet("j", 2), firstName: "Joséphine" };
+  const sheets = [antoine, josephine];
+  const speaker = (label: string) => ({ label, words: 0, first: 0, replies: [] });
+  assert.equal(isGroup(speaker("ANTOINE ET JOSÉPHINE"), sheets), true);
+  assert.equal(isGroup(speaker("ANTOINE & JOSÉPHINE"), sheets), true);
+  assert.equal(isGroup(speaker("ANTOINE, JOSÉPHINE"), sheets), true);
+  assert.equal(isGroup(speaker("ANTOINE ET MAXIME"), sheets), false);
+  assert.equal(isGroup(speaker("ANTOINE"), sheets), false);
+  // Sans fiche : chacun des noms parle aussi seul dans la pièce.
+  const others = [speaker("ANTOINE"), speaker("JOSÉPHINE")];
+  assert.equal(isGroup(speaker("ANTOINE ET JOSÉPHINE"), [], others), true);
+  assert.equal(isGroup(speaker("ANTOINE ET MAXIME"), [], others), false);
 });
