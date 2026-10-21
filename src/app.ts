@@ -79,7 +79,7 @@ import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatr
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
 import type { PeopleHost } from "./fiches-editeur";
 import { marginProposal, marginProposals, setMarginProposal } from "./fiches-marge";
-import { markdownToRtf } from "./rtf";
+import { markdownToRtf, playToRtf, screenplayToRtf } from "./rtf";
 import type { MarginProposal } from "./fiches-marge";
 import { createPanel } from "./fiches-panneau";
 
@@ -2387,21 +2387,25 @@ function chosenPlayExport(): { layout: PlayLayout; page: PlayPage } {
 
 btnExport.addEventListener("click", () => {
   // Un scénario s'exporte en PDF et en Fountain ; les autres formats de
-  // texte, dans tous les formats d'export sauf ceux du scénario. Une pièce
-  // ne s'exporte ni en EPUB ni en RTF.
+  // texte, dans tous les formats d'export sauf ceux du scénario. Le RTF vaut
+  // pour tous. Une pièce ne s'exporte pas en EPUB.
   const scenario = currentFormat === "scenario";
   const theatre = currentFormat === "theatre";
   let first: HTMLInputElement | undefined;
   for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="format"]')) {
     const forScenario = radio.value === "fountain" || radio.value === "fdx";
-    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario) || (theatre && (radio.value === "epub" || radio.value === "rtf"));
+    const everywhere = radio.value === "pdf" || radio.value === "rtf";
+    radio.disabled = radio.value === "fdx" || (!everywhere && forScenario !== scenario) || (theatre && radio.value === "epub");
     radio.parentElement!.classList.toggle("disabled", radio.disabled);
     if (!radio.disabled) first ??= radio;
   }
   const checked = exportDialog.querySelector<HTMLInputElement>('input[name="format"]:checked');
   if (first && (!checked || checked.disabled)) first.checked = true;
   exportNote.hidden = !scenario;
-  for (const font of exportFonts) font.textContent = scenario && font === exportFonts[0] ? "en Courier Prime" : theatre ? "selon la mise en page" : "en Literata";
+  for (const font of exportFonts) {
+    const value = font.closest("label")?.querySelector("input")?.value;
+    font.textContent = scenario && (value === "pdf" || value === "rtf") ? "en Courier Prime" : theatre ? "selon la mise en page" : "en Literata";
+  }
   // Une pièce : sa mise en page et son format de page, retenus pour chaque fichier.
   exportPlay.hidden = !theatre;
   if (theatre) {
@@ -2439,6 +2443,34 @@ function completeCover(): Cover | undefined {
 
 // PDF d'un scénario : les pages sont celles de l'éditeur, ligne pour ligne.
 // Rend le message à afficher.
+// Le RTF : une pièce dans la mise en page choisie, retenue comme pour ses
+// autres exports ; un scénario ligne pour ligne, comme son PDF ; les autres
+// formats depuis leur Markdown.
+async function exportRtf(path: string): Promise<string> {
+  const text = view.state.doc.toString();
+  let contents: string;
+  let cover: Cover | undefined;
+  if (currentFormat === "theatre") {
+    const choice = chosenPlayExport();
+    if (currentPath) {
+      playExports = withPlayExport(playExports, currentPath, choice);
+      savePlayExports(playExports);
+    }
+    contents = playToRtf(text, choice.layout, choice.page);
+  } else if (currentFormat === "scenario") {
+    const lines = view.state.doc.toJSON();
+    cover = completeCover();
+    contents = screenplayToRtf(printedPages(lines, classifyLines(lines)), cover);
+  } else {
+    contents = markdownToRtf(text, currentFormat === "vanilla" ? currentSetup : null);
+  }
+  await invoke("write_text_file", { path, contents });
+  if (currentFormat === "scenario" && !cover) {
+    return `Exporté sans page de titre : ${path}. Pour en avoir une, crée d'abord la page de couverture (menu Scénario).`;
+  }
+  return `Exporté : ${path}`;
+}
+
 async function exportScreenplayPdf(path: string): Promise<string> {
   const lines = view.state.doc.toJSON();
   const cover = completeCover();
@@ -2472,6 +2504,12 @@ exportDialog.addEventListener("close", async () => {
   try {
     // La liste en tête de pièce est mise à jour avant l'export.
     if (currentFormat === "theatre") rewriteCast();
+    // Le RTF est écrit par l'app elle-même, dans tous les formats : il ne
+    // demande ni Pandoc ni XeLaTeX.
+    if (format === "rtf") {
+      setStatus(await exportRtf(path));
+      return;
+    }
     if (currentFormat === "theatre" && playExportKind(format) === "layout") {
       const choice = chosenPlayExport();
       if (currentPath) {
@@ -2489,12 +2527,6 @@ exportDialog.addEventListener("close", async () => {
     }
     // Un texte vanilla s'exporte avec son interligne et ses marges.
     const layout = currentFormat === "vanilla" ? currentSetup : null;
-    // Le RTF est écrit par l'app elle-même : il ne demande pas Pandoc.
-    if (format === "rtf") {
-      await invoke("write_text_file", { path, contents: markdownToRtf(view.state.doc.toString(), layout) });
-      setStatus(`Exporté en ${((performance.now() - start) / 1000).toFixed(1)} s : ${path}`);
-      return;
-    }
     const fountain = format === "fountain" ? fountainExport() : undefined;
     // Une pièce en texte brut est écrite telle quelle, comme en Markdown.
     const route = currentFormat === "theatre" ? "md" : format;

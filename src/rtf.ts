@@ -1,11 +1,17 @@
 // Export au format RTF, écrit par l'app elle-même, sans Pandoc : il marche
-// sur tous les systèmes sans rien installer. Le texte Markdown d'un roman,
-// d'une nouvelle ou d'une page blanche devient un document A4 en Literata,
-// avec ses titres, son italique, son gras, ses exposants et ses notes.
-// Literata est nommée, pas embarquée : sans elle, le traitement de texte
-// prend une autre police.
+// sur tous les systèmes sans rien installer. Un roman, une nouvelle ou une
+// page blanche devient un document A4 en Literata, avec ses titres, son
+// italique, son gras, ses exposants et ses notes ; une pièce suit la mise en
+// page choisie, comme ses modèles Word ; un scénario, la mise en page
+// standard de son PDF, ligne pour ligne. Les polices sont nommées, pas
+// embarquées : sans elles, le traitement de texte en prend une autre.
 
+import type { Cover } from "./cover.ts";
+import { joinNames } from "./cover.ts";
 import type { PageSetup } from "./miseenpage.ts";
+import type { PrintedLine } from "./pagination.ts";
+import { playBlocks } from "./theatre-pandoc.ts";
+import type { PlayLayout, PlayPage } from "./theatre-pandoc.ts";
 
 // Mise en page des romans et des nouvelles : celle du PDF et de Word.
 const DEFAULT_PAGE: PageSetup = { spacing: 1, top: 2.5, bottom: 2.5, left: 2.5, right: 2.5 };
@@ -276,11 +282,139 @@ export function markdownToRtf(markdown: string, setup: PageSetup | null = null):
   }
   flush();
 
+  return rtfDocument("{\\f0\\froman\\fcharset0 Literata;}", A4, page, body.join("\n"));
+}
+
+// Format de page, en vingtièmes de point.
+interface Paper {
+  width: number;
+  height: number;
+}
+
+const A4: Paper = { width: 11906, height: 16838 };
+const A5: Paper = { width: 8391, height: 11906 };
+
+interface Margins {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+// Un document RTF : sa police (la seule, \f0), son format de page, ses marges
+// en centimètres et son contenu (sections, en-têtes et paragraphes).
+function rtfDocument(font: string, paper: Paper, margins: Margins, content: string): string {
   const header = [
     "{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1036\\uc1",
-    "{\\fonttbl{\\f0\\froman\\fcharset0 Literata;}}",
-    `\\paperw11906\\paperh16838\\margl${twips(page.left)}\\margr${twips(page.right)}\\margt${twips(page.top)}\\margb${twips(page.bottom)}`,
+    `{\\fonttbl${font}}`,
+    `\\paperw${paper.width}\\paperh${paper.height}\\margl${twips(margins.left)}\\margr${twips(margins.right)}\\margt${twips(margins.top)}\\margb${twips(margins.bottom)}`,
     "\\widowctrl\\ftnbj\\fet0",
   ];
-  return `${header.join("\n")}\n${body.join("\n")}\n}\n`;
+  return `${header.join("\n")}\n${content}\n}\n`;
+}
+
+// Numéro de page en bas, au centre.
+const FOOTER_PAGE_NUMBER = "{\\footer\\pard\\plain\\qc\\f0\\fs20 \\chpgn\\par}";
+
+const COURIER = "{\\f0\\fmodern\\fprq1\\fcharset0 Courier Prime{\\*\\falt Courier New};}";
+const GARAMOND = "{\\f0\\froman\\fcharset0 EB Garamond;}";
+
+// Les styles d'une pièce, repris des modèles Word (theatre-*.docx) : espaces
+// avant et après, en vingtièmes de point, alignement, retraits, graisse.
+const PLAY_RTF: Record<string, string> = {
+  Acte: "\\pagebb\\keepn\\sb0\\sa480\\qc\\b",
+  Scene: "\\keepn\\sb360\\sa240\\qc\\b",
+  Personnages: "\\keepn\\sb0\\sa360\\qc\\b",
+  Distribution: "\\sb0\\sa120",
+  Personnage: "\\keepn\\sb240\\sa0\\qc",
+  Replique: "\\sb0\\sa120",
+  Didascalie: "\\sb60\\sa120\\li1134\\ri567\\i",
+  Texte: "\\sb0\\sa120",
+};
+
+// Une pièce en RTF, dans la mise en page choisie : manuscrit (Courier Prime
+// corps 12, A4) ou édition (EB Garamond, A4 corps 12 ou A5 corps 11, noms en
+// capitales de corps réduit). Chaque acte commence sur une nouvelle page ;
+// les pages sont numérotées en bas, au centre.
+export function playToRtf(text: string, layout: PlayLayout, page: PlayPage): string {
+  const manuscript = layout === "manuscrit";
+  const a5 = !manuscript && page === "a5";
+  const size = a5 ? 22 : 24;
+  const nameSize = manuscript ? "" : a5 ? "\\caps\\fs18" : "\\caps\\fs20";
+  const body = playBlocks(text, layout).map((block) => {
+    // Les lignes d'une réplique restent des lignes (un vers reste un vers) ;
+    // celles d'un paragraphe de texte se suivent.
+    const separator = block.style === "Replique" ? "\\line " : " ";
+    const content = block.lines.map((line) => inlineRtf(line)).join(separator);
+    const extra = block.style === "Personnage" ? nameSize : "";
+    return `{\\pard\\plain\\f0\\fs${size}\\lang1036${PLAY_RTF[block.style]}${extra} ${content}\\par}`;
+  });
+  const margin = a5 ? 2 : 2.5;
+  const margins = { top: margin, bottom: margin, left: margin, right: margin };
+  return rtfDocument(manuscript ? COURIER : GARAMOND, a5 ? A5 : A4, margins, `${FOOTER_PAGE_NUMBER}\n${body.join("\n")}`);
+}
+
+// Page de titre d'un scénario, comme celle du PDF : le titre en capitales,
+// « écrit par », les auteurs, l'œuvre adaptée, puis les coordonnées en bas à
+// gauche.
+function coverRtf(cover: Cover): string {
+  const para = (attrs: string, text: string) => `{\\pard\\plain\\f0\\fs24\\lang1036${attrs} ${text}\\par}`;
+  const parts = [
+    // Le titre au tiers de la page, comme dans le PDF.
+    para("\\qc\\sb3912\\sa480", escapeText(cover.title.trim().toLocaleUpperCase("fr"))),
+    para("\\qc\\sa480", "\\u233\\'e9crit par"),
+    para("\\qc", escapeText(joinNames(cover.authors.map((author) => author.name.trim())))),
+  ];
+  if (cover.source.trim()) parts.push(para("\\qc\\sb480", `d'apr\\u232\\'e8s ${escapeText(cover.source.trim())}`));
+  // Les coordonnées, dans un cadre posé en bas de la page.
+  const contact = cover.authors
+    .map((author) => {
+      const agent = `${author.agentFirstName.trim()} ${author.agentLastName.trim()}`.trim();
+      return [author.name, author.email, author.phone, agent ? `Représenté par ${agent}` : "", author.agency, author.agencyEmail, author.agencyPhone]
+        .map((value) => value.trim())
+        .filter((value) => value !== "")
+        .map(escapeText)
+        .join("\\line ");
+    })
+    .join("\\line\\line ");
+  parts.push(`{\\pard\\plain\\pvmrg\\posyb\\phmrg\\posxl\\absw8504\\f0\\fs24\\lang1036 ${contact}\\par}`);
+  return parts.join("\n");
+}
+
+// Un passage d'une ligne imprimée, dans sa graisse.
+function runRtf(run: PrintedLine[number]): string {
+  // Courier Prime n'a pas d'espace fine insécable.
+  const text = escapeText(run.text.replace(/\u202f/g, "\u00a0"));
+  if (run.style === "b") return `{\\b ${text}}`;
+  if (run.style === "i") return `{\\i ${text}}`;
+  if (run.style === "bi") return `{\\b\\i ${text}}`;
+  return text;
+}
+
+// Un scénario en RTF, à la mise en page standard de son PDF : les pages et
+// les lignes déjà découpées par l'éditeur (voir printedPages), en Courier
+// Prime corps 12, une ligne tous les 12 points, marge de 1,5 pouce à gauche.
+// Le numéro de page est en haut à droite, suivi d'un point, sauf sur la
+// première page ; la page de titre, s'il y en a une, précède le texte.
+export function screenplayToRtf(pages: PrintedLine[][], cover?: Cover): string {
+  const inch = 2.54;
+  const sections: string[] = [];
+  if (cover) {
+    sections.push(`\\sectd\\titlepg\\marglsxn${twips(3.8)}\\margrsxn${twips(2.5)}\\margtsxn${twips(2.5)}\\margbsxn${twips(2.5)}`);
+    sections.push(coverRtf(cover));
+    sections.push("\\sect");
+  }
+  sections.push(
+    `\\sectd\\sbkpage\\pgnrestart\\pgnstarts1\\titlepg\\marglsxn${twips(1.5 * inch)}\\margrsxn${twips(0.77 * inch)}\\margtsxn${twips(inch)}\\margbsxn${twips(inch)}`,
+    "{\\header\\pard\\plain\\qr\\f0\\fs24 \\chpgn.\\par}",
+  );
+  // Chaque ligne imprimée est un paragraphe, espaces du retrait comprises ;
+  // l'interligne est exactement de 12 points.
+  const line = "\\pard\\plain\\f0\\fs24\\lang1036\\sl-240\\sa0\\sb0";
+  const body = pages.map((page, index) => {
+    const lines = (page.length ? page : [[]]).map((runs) => `{${line}${index > 0 && runs === page[0] ? "\\pagebb" : ""} ${runs.map(runRtf).join("")}\\par}`);
+    return lines.join("\n");
+  });
+  sections.push(body.join("\n"));
+  return rtfDocument(COURIER, A4, { top: 2.54, bottom: 2.54, left: 1.5 * inch, right: 0.77 * inch }, sections.join("\n"));
 }

@@ -54,33 +54,43 @@ function shown(kind: PlayLine, line: string, layout: PlayLayout): string {
   }
 }
 
-export function playToPandoc(text: string, layout: PlayLayout): string {
+// Un élément de la pièce à l'export : son style nommé, et ses lignes telles
+// que la mise en page les montre. Les lignes d'une même réplique, ou d'un même
+// paragraphe de texte, forment un seul élément ; chaque autre ligne a le sien.
+export interface PlayBlock {
+  style: string;
+  lines: string[];
+}
+
+export function playBlocks(text: string, layout: PlayLayout): PlayBlock[] {
   const lines = text.split("\n");
   const kinds = classifyPlay(lines);
-  const blocks: string[] = [];
-  let group: { style: string; lines: string[] } | undefined;
-  const flush = () => {
-    // Les lignes d'une réplique sont séparées par un saut de ligne forcé (« \ »
-    // en fin de ligne) : un vers reste un vers. Celles d'un paragraphe de texte
-    // se suivent, comme dans un roman.
-    const separator = group?.style === "Replique" ? "\\\n" : "\n";
-    if (group) blocks.push(`::: {custom-style="${group.style}"}\n${group.lines.map(escapeLine).join(separator)}\n:::`);
-    group = undefined;
-  };
+  const blocks: PlayBlock[] = [];
+  let group: PlayBlock | undefined;
   lines.forEach((line, index) => {
     const kind = kinds[index];
     const style = STYLE_OF[kind];
     if (!style) {
-      flush();
+      group = undefined;
       return;
     }
-    // Les lignes d'une même réplique, ou d'un même paragraphe de texte,
-    // forment un seul bloc ; chaque autre élément a le sien.
     const joins = (kind === "dialogue" || kind === "text") && group?.style === style;
-    if (!joins) flush();
-    group ??= { style, lines: [] };
-    group.lines.push(shown(kind, line.trim(), layout));
+    if (!joins) {
+      group = { style, lines: [] };
+      blocks.push(group);
+    }
+    group!.lines.push(shown(kind, line.trim(), layout));
   });
-  flush();
+  return blocks;
+}
+
+export function playToPandoc(text: string, layout: PlayLayout): string {
+  // Les lignes d'une réplique sont séparées par un saut de ligne forcé (« \ »
+  // en fin de ligne) : un vers reste un vers. Celles d'un paragraphe de texte
+  // se suivent, comme dans un roman.
+  const blocks = playBlocks(text, layout).map((block) => {
+    const separator = block.style === "Replique" ? "\\\n" : "\n";
+    return `::: {custom-style="${block.style}"}\n${block.lines.map(escapeLine).join(separator)}\n:::`;
+  });
   return blocks.join("\n\n") + "\n";
 }
