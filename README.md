@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.41, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
+Version 0.0.42, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
 
 Ce qui fonctionne :
 
@@ -18,11 +18,11 @@ Ce qui fonctionne :
 - **Format théâtre** : une pièce en actes (`# ACTE I`) et en scènes (`## Scène 1`), avec une liste des personnages facultative ; Tab, Entrée et « ( » guident la saisie du nom, de la réplique et de la didascalie ; un bandeau en haut de l'éditeur et le pied de page disent l'acte et la scène en cours. Au cork board, une colonne par acte ; la pièce est renumérotée après chaque déplacement, ou par Théâtre > Renuméroter les actes et les scènes. Export en PDF, Word et OpenDocument, en manuscrit (Courier Prime) ou en édition (EB Garamond, A4 ou A5).
 - **Format nouvelle** : des scènes sans chapitres, avec un cork board d'une seule colonne.
 - **Format du texte** : retenu pour chaque fichier ; demandé à l'ouverture d'un fichier `.md` ou `.txt` inconnu, et modifiable par Fichier > Format du texte…. Un fichier `.fountain` est toujours un scénario.
-- **Import** d'un document Word (`.docx`) ou OpenDocument (`.odt`) par « Ouvrir… » : il devient un nouveau texte en Markdown, le document d'origine n'est pas modifié.
+- **Import** d'un document Word (`.docx`), OpenDocument (`.odt`) ou RTF (`.rtf`) par « Ouvrir… » : il devient un nouveau texte en Markdown, le document d'origine n'est pas modifié.
 - **Format page blanche** : un texte libre, d'un seul tenant, sans cork board, compté en feuillets de 1 500 signes : le pied de page donne le feuillet du curseur et le total, un repère numéroté marque chaque feuillet dans le texte. Fichier > Mise en page… règle son interligne et ses quatre marges, retenus pour chaque fichier, visibles à l'écran sur une feuille A4 et repris par les exports PDF, Word et OpenDocument. 
 - **Cork board** : les scènes en fiches sur un fond en liège, à réordonner à la souris ou au clavier, d'un chapitre à l'autre.
 - **Fichiers** : nouveau, ouvrir, enregistrer, enregistrer sous, et la liste des cinq derniers textes sur l'écran d'accueil.
-- **Export** en PDF, Word (.docx), OpenDocument (.odt), EPUB, Markdown et texte brut.
+- **Export** en PDF, Word (.docx), OpenDocument (.odt), RTF, EPUB, Markdown et texte brut. Le RTF est écrit par l'app elle-même, dans tous les formats (une pièce dans sa mise en page, un scénario ligne pour ligne comme son PDF) : il ne demande ni Pandoc ni XeLaTeX.
 - **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
 - **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
 - **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre. Correction > Utiliser l'apostrophe typographique remplace en une fois toutes les apostrophes droites du texte. Correction > Mettre en forme les nombres ordinaux écrit « 1er », « XIXe » en « 1ᵉʳ », « XIXᵉ », que les exports mettent en exposant.
