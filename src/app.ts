@@ -1298,7 +1298,11 @@ const panel = createPanel(peopleRoot, {
   },
   replies: (sheet) => repliesOf(sheet),
   castOffer: () => (currentFormat === "theatre" && currentFiches.listeTenue === false ? () => offerCastImport() : undefined),
-  save: () => void saveDocument(),
+  async save() {
+    const saved = await saveDocument();
+    if (saved) setStatus("Personnage enregistré");
+    return saved;
+  },
   goTo(pos) {
     view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
     view.focus();
@@ -1587,22 +1591,25 @@ async function loadFiches(path: string | undefined) {
 }
 
 // Écrit les fiches à côté du texte ; une erreur ne défait pas l'enregistrement du texte.
-async function writeFiches(path: string) {
+// Renvoie false si les fiches n'ont pas été écrites alors qu'elles devaient l'être.
+async function writeFiches(path: string): Promise<boolean> {
   // Enregistré sous un autre nom : le fichier illisible reste où il est, et
   // les fiches sont rétablies pour le nouveau texte.
   if (fichesBlocked && sidecarPath(path) !== blockedSidecar) {
     fichesBlocked = false;
     refreshPeopleMenu();
   }
-  if (fichesBlocked) return;
+  if (fichesBlocked) return false;
   const file = currentFiches;
-  if (!fichesToWrite && file.personnages.length === 0 && file.ecartes.length === 0 && file.listeTenue === null) return;
+  if (!fichesToWrite && file.personnages.length === 0 && file.ecartes.length === 0 && file.listeTenue === null) return true;
   const sidecar = sidecarPath(path);
   try {
     await invoke("write_text_file", { path: sidecar, contents: serializeSheets(file) });
     fichesToWrite = true;
+    return true;
   } catch (error) {
     setStatus(`les fiches n'ont pas pu être enregistrées dans ${sidecar} (${error})`, true);
+    return false;
   }
 }
 
@@ -2233,7 +2240,8 @@ function requestOpenDocument() {
   confirmDiscard("Ouvrir un texte", "Abandonner et ouvrir", openDocument);
 }
 
-async function writeDocument(path: string) {
+// Renvoie true si le texte et ses fiches ont été écrits.
+async function writeDocument(path: string): Promise<boolean> {
   // La liste en tête de pièce est mise à jour avant d'être enregistrée.
   rewriteCast();
   // Le texte est relevé avant l'écriture : une frappe pendant l'enregistrement
@@ -2259,26 +2267,27 @@ async function writeDocument(path: string) {
     // Le chemin complet reste lisible au survol.
     fileStatus.title = path;
     // Les fiches suivent le texte, dans un fichier à côté de lui.
-    await writeFiches(path);
+    return await writeFiches(path);
   } catch (error) {
     setStatus(`l'enregistrement a échoué (${error})`, true);
+    return false;
   }
 }
 
-async function saveDocumentAs() {
-  if (document.querySelector("dialog[open]")) return;
+async function saveDocumentAs(): Promise<boolean> {
+  if (document.querySelector("dialog[open]")) return false;
   const path = await save({
     title: "Enregistrer le texte sous",
     defaultPath: currentPath ?? `${importName ?? "sans-titre"}${currentFormat === "scenario" ? ".fountain" : ".md"}`,
     filters: currentFormat === "scenario" ? FOUNTAIN_FILTERS : TEXT_FILTERS,
   });
-  if (path) await writeDocument(path);
+  return path ? await writeDocument(path) : false;
 }
 
-async function saveDocument() {
-  if (document.querySelector("dialog[open]")) return;
-  if (currentPath) await writeDocument(currentPath);
-  else await saveDocumentAs();
+async function saveDocument(): Promise<boolean> {
+  if (document.querySelector("dialog[open]")) return false;
+  if (currentPath) return await writeDocument(currentPath);
+  return await saveDocumentAs();
 }
 
 btnNew.addEventListener("click", chooseNewDocument);
