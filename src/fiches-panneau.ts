@@ -1,7 +1,7 @@
 // Le panneau des personnages, à droite du texte : la liste de toutes les
 // fiches, une fiche à modifier, ou le choix entre deux fiches qui portent le
-// même nom. Chaque saisie est prise en compte aussitôt, sans bouton
-// « Enregistrer » : la fiche s'enregistre avec le texte.
+// même nom. Chaque saisie est prise en compte aussitôt ; la fiche s'enregistre
+// avec le texte, par Ctrl+S ou par le bouton « Enregistrer » en bas de la fiche.
 
 import { DRAMATIC_FUNCTIONS, UNNAMED, displayName, emptySheet, isFullSheet, isValidSheet, newSheetId } from "./fiches.ts";
 import type { CustomField, Importance, Relation, Sheet, SheetsFile } from "./fiches.ts";
@@ -17,6 +17,8 @@ export interface PanelHost {
   // Au théâtre, si l'auteur a refusé que l'app tienne la liste : l'action
   // qui refait la proposition.
   castOffer(): (() => void) | undefined;
+  // Enregistre le texte et ses fiches, comme Ctrl+S.
+  save(): void;
   goTo(pos: number): void;
   // La fiche affichée change (undefined : aucune), pour surligner ses noms.
   shown(id: string | undefined): void;
@@ -334,7 +336,9 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     }
     const replies = host.replies(sheet);
     if (replies) nodes.push(repliesBlock(replies));
-    if (sheet !== draft) nodes.push(el("div", { class: "people-end" }, button("Supprimer la fiche", () => confirmDelete(sheet))));
+    const end = el("div", { class: "people-end" }, button("Enregistrer", () => host.save(), "button primary"));
+    if (sheet !== draft) end.append(button("Supprimer la fiche", () => confirmDelete(sheet)));
+    nodes.push(end);
     render(nodes);
     host.shown(sheet === draft ? undefined : sheet.id);
     if (focus) root.querySelector<HTMLInputElement>("input")?.focus();

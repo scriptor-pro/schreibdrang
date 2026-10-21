@@ -1298,6 +1298,7 @@ const panel = createPanel(peopleRoot, {
   },
   replies: (sheet) => repliesOf(sheet),
   castOffer: () => (currentFormat === "theatre" && currentFiches.listeTenue === false ? () => offerCastImport() : undefined),
+  save: () => void saveDocument(),
   goTo(pos) {
     view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
     view.focus();
