@@ -126,7 +126,8 @@ test("sc√©nario avec page de titre : une section pour elle, puis le texte pagin√
   const rtf = screenplayToRtf([[[{ text: "FONDU :", style: "" }]]], { title: "Untitled", source: "", authors: [author] });
   assert.match(rtf, /\\qc\\sb3912\\sa480 UNTITLED\\par\}/);
   assert.match(rtf, /\\u233\\'e9crit par/);
-  assert.match(rtf, /\\posyb[^}]* Alan Smithee\\line alan@example\.org\\line 555 6789\\par\}/);
+  assert.match(rtf, /\{\\footerf\{\\pard[^}]* Alan Smithee\\line alan@example\.org\\line 555 6789\\par\}\}/);
+  assert.match(rtf, /\{\\headerf\\pard\\plain\\par\}\{\\footerf\\pard\\plain\\par\}/);
   assert.match(rtf, /\\sect\n\\sectd\\sbkpage\\pgnrestart\\pgnstarts1\\titlepg/);
 });
 

@@ -355,9 +355,10 @@ export function playToRtf(text: string, layout: PlayLayout, page: PlayPage): str
 }
 
 // Page de titre d'un scénario, comme celle du PDF : le titre en capitales,
-// « écrit par », les auteurs, l'œuvre adaptée, puis les coordonnées en bas à
-// gauche.
-function coverRtf(cover: Cover): string {
+// « écrit par », les auteurs, l'œuvre adaptée ; les coordonnées vont en bas à
+// gauche, dans le pied de cette seule page (un cadre posé en bas de page
+// glissait sur la page suivante dans LibreOffice).
+function coverRtf(cover: Cover): { body: string; contact: string } {
   const para = (attrs: string, text: string) => `{\\pard\\plain\\f0\\fs24\\lang1036${attrs} ${text}\\par}`;
   const parts = [
     // Le titre au tiers de la page, comme dans le PDF.
@@ -366,7 +367,6 @@ function coverRtf(cover: Cover): string {
     para("\\qc", escapeText(joinNames(cover.authors.map((author) => author.name.trim())))),
   ];
   if (cover.source.trim()) parts.push(para("\\qc\\sb480", `d'apr\\u232\\'e8s ${escapeText(cover.source.trim())}`));
-  // Les coordonnées, dans un cadre posé en bas de la page.
   const contact = cover.authors
     .map((author) => {
       const agent = `${author.agentFirstName.trim()} ${author.agentLastName.trim()}`.trim();
@@ -377,8 +377,7 @@ function coverRtf(cover: Cover): string {
         .join("\\line ");
     })
     .join("\\line\\line ");
-  parts.push(`{\\pard\\plain\\pvmrg\\posyb\\phmrg\\posxl\\absw8504\\f0\\fs24\\lang1036 ${contact}\\par}`);
-  return parts.join("\n");
+  return { body: parts.join("\n"), contact: `{\\pard\\plain\\f0\\fs24\\lang1036 ${contact}\\par}` };
 }
 
 // Un passage d'une ligne imprimée, dans sa graisse.
@@ -400,13 +399,15 @@ export function screenplayToRtf(pages: PrintedLine[][], cover?: Cover): string {
   const inch = 2.54;
   const sections: string[] = [];
   if (cover) {
+    const { body, contact } = coverRtf(cover);
     sections.push(`\\sectd\\titlepg\\marglsxn${twips(3.8)}\\margrsxn${twips(2.5)}\\margtsxn${twips(2.5)}\\margbsxn${twips(2.5)}`);
-    sections.push(coverRtf(cover));
-    sections.push("\\sect");
+    sections.push(`{\\footerf${contact}}`, body, "\\sect");
   }
   sections.push(
     `\\sectd\\sbkpage\\pgnrestart\\pgnstarts1\\titlepg\\marglsxn${twips(1.5 * inch)}\\margrsxn${twips(0.77 * inch)}\\margtsxn${twips(inch)}\\margbsxn${twips(inch)}`,
     "{\\header\\pard\\plain\\qr\\f0\\fs24 \\chpgn.\\par}",
+    // Vides, pour ne pas hériter du pied de la page de titre.
+    "{\\headerf\\pard\\plain\\par}{\\footerf\\pard\\plain\\par}{\\footer\\pard\\plain\\par}",
   );
   // Chaque ligne imprimée est un paragraphe, espaces du retrait comprises ;
   // l'interligne est exactement de 12 points.
