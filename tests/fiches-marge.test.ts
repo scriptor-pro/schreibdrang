@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EditorState } from "@codemirror/state";
-import { MARGIN_GAP, marginBox, marginProposal, setMarginProposal } from "../src/fiches-marge.ts";
+import { EDGE_GAP, MARGIN_GAP, marginBox, marginProposal, setMarginProposal } from "../src/fiches-marge.ts";
 
 const REM = 16;
 
@@ -11,12 +11,16 @@ test("marge large : l'invitation fait 16 rem, calée contre le texte", () => {
 });
 
 test("marge moyenne : l'invitation prend la place qui reste entre les deux écarts", () => {
-  const room = 12 * REM + 2 * MARGIN_GAP + 10;
-  assert.deepEqual(marginBox(room, REM), { left: MARGIN_GAP, width: 12 * REM + 10 });
+  const room = 12 * REM + MARGIN_GAP + EDGE_GAP + 10;
+  assert.deepEqual(marginBox(room, REM), { left: EDGE_GAP, width: 12 * REM + 10 });
+});
+
+test("fenêtre de 1 100 pixels : le texte commence à 256 pixels, l'invitation y tient", () => {
+  assert.notEqual(marginBox(218 + 38, REM), null);
 });
 
 test("marge trop étroite : pas de place, l'invitation va au pied de page", () => {
-  assert.equal(marginBox(12 * REM + 2 * MARGIN_GAP - 1, REM), null);
+  assert.equal(marginBox(12 * REM + MARGIN_GAP + EDGE_GAP - 1, REM), null);
   assert.equal(marginBox(0, REM), null);
 });
 

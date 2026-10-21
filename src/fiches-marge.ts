@@ -34,19 +34,20 @@ export const marginProposal = StateField.define<MarginProposal | null>({
   },
 });
 
-// Écart entre l'invitation et le texte, et entre l'invitation et le bord de
-// l'éditeur, en pixels.
+// Écart entre l'invitation et le texte, puis entre l'invitation et le bord
+// de l'éditeur, en pixels.
 export const MARGIN_GAP = 16;
+export const EDGE_GAP = 8;
 // Largeur de l'invitation, en rem : au plus 16, au moins 12, sinon elle va
 // dans le pied de page.
 const MAX_REM = 16;
 const MIN_REM = 12;
 
-// La place de l'invitation dans une marge de `room` pixels, comptés depuis le
-// bord gauche de l'éditeur : son bord gauche et sa largeur, ou rien si la
-// marge est trop étroite. Elle est calée contre le texte.
+// La place de l'invitation quand le texte commence à `room` pixels du bord
+// gauche de l'éditeur : son bord gauche et sa largeur, ou rien si la marge
+// est trop étroite. Elle est calée contre le texte.
 export function marginBox(room: number, rem: number): { left: number; width: number } | null {
-  const width = Math.min(room - 2 * MARGIN_GAP, MAX_REM * rem);
+  const width = Math.min(room - MARGIN_GAP - EDGE_GAP, MAX_REM * rem);
   if (width < MIN_REM * rem) return null;
   return { left: room - MARGIN_GAP - width, width };
 }
@@ -60,7 +61,12 @@ function rootRem(): number {
 function measureBox(view: EditorView): { left: number; width: number } | null | undefined {
   const scroller = view.scrollDOM.getBoundingClientRect();
   if (scroller.width === 0) return undefined;
-  return marginBox(view.contentDOM.getBoundingClientRect().left - scroller.left, rootRem());
+  // Le retrait intérieur de la colonne compte dans la marge, sauf quand un
+  // filet borde la colonne (plein écran) : l'invitation reste alors hors du
+  // filet.
+  const style = getComputedStyle(view.contentDOM);
+  const inside = parseFloat(style.borderLeftWidth) > 0 ? 0 : parseFloat(style.paddingLeft) || 0;
+  return marginBox(view.contentDOM.getBoundingClientRect().left + inside - scroller.left, rootRem());
 }
 
 class ProposalMarker implements LayerMarker {
