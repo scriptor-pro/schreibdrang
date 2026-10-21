@@ -530,6 +530,46 @@ section[hidden] {
   display: none;
 }
 
+/* Invitation affichée dans la marge : le pied de page la garde pour les
+   lecteurs d'écran, et la montre dès qu'un de ses boutons reçoit le focus. */
+#people-proposal.in-margin:not(:focus-within) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* La même invitation dans la marge de gauche, à la hauteur du nom, calée
+   contre le texte. */
+.cm-people-margin {
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--accent);
+}
+
+.cm-people-margin button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cm-people-margin button + button::before {
+  content: "· ";
+  font-weight: 400;
+  text-decoration: none;
+  display: inline-block;
+  margin-right: 0.25em;
+}
+
 #people-proposal button {
   padding: 0;
   border: 0;
@@ -556,9 +596,8 @@ body.fullscreen #toolbar {
 }
 
 /* Quand l'app occupe tout l'écran (plein écran ou fenêtre agrandie), le texte
-   est centré entre deux marges égales, et un fin filet le borde à gauche et à
-   droite sur toute la hauteur. Le sélecteur est plus précis que celui du thème
-   de l'éditeur, qui aligne le texte à gauche. */
+   est centré entre deux marges égales, comme dans une fenêtre ordinaire, et
+   un fin filet le borde à gauche et à droite sur toute la hauteur. */
 body.fullscreen .cm-editor .cm-content,
 body.whole-screen .cm-editor .cm-content {
   margin: 0 auto;

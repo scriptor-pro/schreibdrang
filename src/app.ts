@@ -78,6 +78,8 @@ import type { Candidate, Reply, Speaker } from "./fiches-detection";
 import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatre";
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
 import type { PeopleHost } from "./fiches-editeur";
+import { marginProposal, marginProposals, setMarginProposal } from "./fiches-marge";
+import type { MarginProposal } from "./fiches-marge";
 import { createPanel } from "./fiches-panneau";
 
 // Les réglages ont déjà été appliqués par main.ts.
@@ -1125,6 +1127,9 @@ const peopleWatcher = EditorView.updateListener.of((update) => {
   speakerTimer = window.setTimeout(proposeForSpeakers, 400);
 });
 
+// L'invitation à créer une fiche, dans la marge de gauche quand elle a la place.
+const peopleMargin = marginProposals(marginRoomChanged);
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
@@ -1166,7 +1171,9 @@ function createState(doc: string): EditorState {
         },
         ".cm-content": {
           maxWidth: "72ch",
-          margin: "0",
+          // Centré dès que la fenêtre le permet : la marge de gauche reçoit
+          // l'invitation à créer une fiche.
+          margin: "0 auto",
           padding: "2rem 2rem 40vh",
           caretColor: "var(--ink)",
         },
@@ -1234,6 +1241,7 @@ function createState(doc: string): EditorState {
       typographyInput,
       correctionExtension(correctionActions),
       peopleExtension(peopleHost),
+      peopleMargin,
       peopleWatcher,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "fr" }),
       EditorView.domEventHandlers({
@@ -1367,20 +1375,44 @@ interface Proposal {
   actions: { label: string; run: () => void }[];
 }
 
-function proposeInFooter(proposal: Proposal | undefined) {
+// La marge de gauche a-t-elle la place d'une invitation ?
+let marginRoom = false;
+let proposalSerial = 0;
+
+function shownInMargin(): boolean {
+  return marginRoom && (view.state.field(marginProposal, false) ?? null) !== null;
+}
+
+function marginRoomChanged(room: boolean) {
+  marginRoom = room;
+  proposalEl.classList.toggle("in-margin", shownInMargin());
+}
+
+// Une proposition s'affiche dans le pied de page ; `near`, le début du nom
+// qui l'a fait naître, la place dans la marge de gauche, à sa hauteur, si la
+// marge a la place. Le pied de page la garde alors, invisible, pour les
+// lecteurs d'écran et le clavier.
+function proposeInFooter(proposal: Proposal | undefined, near?: number) {
   proposalEl.replaceChildren();
   proposalEl.hidden = !proposal;
-  if (!proposal) return;
-  proposalEl.append(proposal.text);
-  for (const action of proposal.actions) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = action.label;
-    button.addEventListener("click", () => {
+  const actions = (proposal?.actions ?? []).map((action) => ({
+    label: action.label,
+    run: () => {
       proposeInFooter(undefined);
       action.run();
       if (!panel.isOpen() || !peopleRoot.contains(document.activeElement)) view.focus();
-    });
+    },
+  }));
+  const margin: MarginProposal | null = proposal && near !== undefined ? { id: ++proposalSerial, pos: near, text: proposal.text, actions } : null;
+  if (margin || view.state.field(marginProposal, false)) view.dispatch({ effects: setMarginProposal.of(margin) });
+  proposalEl.classList.toggle("in-margin", shownInMargin());
+  if (!proposal) return;
+  proposalEl.append(proposal.text);
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", action.run);
     proposalEl.append(button);
   }
 }
@@ -1423,13 +1455,18 @@ async function proposeForWord(candidate: Candidate) {
   // Le temps de la réponse du moteur, la fiche a pu être créée ou le mot écarté.
   if (!mayBeCharacter(word, currentFiches.personnages, currentFiches.ecartes)) return;
   proposedWords.set(word, count);
-  proposeInFooter({
-    text: `“${word}” ressemble à un personnage.`,
-    actions: [
-      { label: "Créer sa fiche", run: () => panel.newSheet(word, false) },
-      { label: "Ignorer", run: () => ignoreWord(word) },
-    ],
-  });
+  proposeInFooter(
+    {
+      text: `“${word}” ressemble à un personnage.`,
+      actions: [
+        { label: "Créer sa fiche", run: () => panel.newSheet(word, false) },
+        { label: "Ignorer", run: () => ignoreWord(word) },
+      ],
+    },
+    // Le texte a pu changer pendant l'examen du mot : sans le nom à sa place,
+    // l'invitation reste au pied de page.
+    view.state.sliceDoc(candidate.from, candidate.from + word.length) === word ? candidate.from : undefined,
+  );
 }
 
 // Les personnages qui parlent sans fiche et que l'auteur n'a ni écartés ni
