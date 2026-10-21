@@ -1303,6 +1303,7 @@ const panel = createPanel(peopleRoot, {
     if (saved) setStatus("Personnage enregistré");
     return saved;
   },
+  untitled: () => currentPath === undefined,
   goTo(pos) {
     view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
     view.focus();

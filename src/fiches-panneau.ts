@@ -2,7 +2,8 @@
 // fiches, une fiche à modifier, ou le choix entre deux fiches qui portent le
 // même nom. Chaque saisie est prise en compte aussitôt ; la fiche s'enregistre
 // avec le texte, par Ctrl+S ou par le bouton « Enregistrer » en bas de la fiche,
-// qui ferme ensuite le panneau.
+// qui ferme ensuite le panneau (et demande d'abord, pour un texte jamais
+// enregistré, s'il faut l'enregistrer).
 
 import { DRAMATIC_FUNCTIONS, UNNAMED, displayName, emptySheet, isFullSheet, isValidSheet, newSheetId } from "./fiches.ts";
 import type { CustomField, Importance, Relation, Sheet, SheetsFile } from "./fiches.ts";
@@ -20,6 +21,8 @@ export interface PanelHost {
   castOffer(): (() => void) | undefined;
   // Enregistre le texte et ses fiches, comme Ctrl+S ; true si c'est fait.
   save(): Promise<boolean>;
+  // Vrai si le texte n'a encore jamais été enregistré.
+  untitled(): boolean;
   goTo(pos: number): void;
   // La fiche affichée change (undefined : aucune), pour surligner ses noms.
   shown(id: string | undefined): void;
@@ -285,6 +288,33 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     dialog.showModal();
   }
 
+  // Enregistrée, la fiche se ferme ; le pied de page le confirme. Un texte
+  // jamais enregistré demande d'abord s'il faut l'enregistrer.
+  async function saveSheet() {
+    if (host.untitled() && !(await confirmSaveText())) return;
+    if (await host.save()) api.close();
+  }
+
+  function confirmSaveText(): Promise<boolean> {
+    const dialog = el("dialog", { "aria-labelledby": "people-save-title", "aria-describedby": "people-save-message" });
+    const form = el(
+      "form",
+      { method: "dialog" },
+      el("h2", { id: "people-save-title" }, "Enregistrer le texte"),
+      el("p", { id: "people-save-message" }, "Ce texte n'a pas encore été enregistré. La fiche s'enregistre avec lui."),
+      el("div", { class: "actions" }, el("button", { value: "cancel" }, "Annuler"), el("button", { value: "confirm", class: "primary" }, "Enregistrer le texte…")),
+    );
+    dialog.append(form);
+    document.body.append(dialog);
+    return new Promise((resolve) => {
+      dialog.addEventListener("close", () => {
+        dialog.remove();
+        resolve(dialog.returnValue === "confirm");
+      });
+      dialog.showModal();
+    });
+  }
+
   function renderSheet(sheet: Sheet, focus: boolean) {
     fieldCount = 0;
     const full = isFullSheet(sheet) || expanded.has(sheet.id);
@@ -337,10 +367,7 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     }
     const replies = host.replies(sheet);
     if (replies) nodes.push(repliesBlock(replies));
-    const end = el("div", { class: "people-end" }, button("Enregistrer", async () => {
-      // Enregistrée, la fiche se ferme ; le pied de page le confirme.
-      if (await host.save()) api.close();
-    }, "button primary"));
+    const end = el("div", { class: "people-end" }, button("Enregistrer", saveSheet, "button primary"));
     if (sheet !== draft) end.append(button("Supprimer la fiche", () => confirmDelete(sheet)));
     nodes.push(end);
     render(nodes);
