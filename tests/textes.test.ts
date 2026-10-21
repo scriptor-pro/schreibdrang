@@ -40,6 +40,7 @@ test("un fichier est un scénario Fountain, un texte, ou un document à importer
   assert.equal(fileKind("/x/recit.md"), "texte");
   assert.equal(fileKind("/x/recit.TXT"), "texte");
   assert.equal(fileKind("/x/roman.docx"), "import");
+  assert.equal(fileKind("/x/roman.RTF"), "import");
   assert.equal(fileKind("C:\\x\\roman.ODT"), "import");
 });
 

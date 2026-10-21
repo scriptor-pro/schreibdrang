@@ -79,6 +79,7 @@ import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatr
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
 import type { PeopleHost } from "./fiches-editeur";
 import { marginProposal, marginProposals, setMarginProposal } from "./fiches-marge";
+import { markdownToRtf } from "./rtf";
 import type { MarginProposal } from "./fiches-marge";
 import { createPanel } from "./fiches-panneau";
 
@@ -264,7 +265,7 @@ const filenameEl = document.querySelector<HTMLSpanElement>("#filename")!;
 // écrit en Fountain.
 let currentFormat: Format = "roman";
 
-// Nom, sans extension, du document Word ou OpenDocument dont le texte affiché
+// Nom, sans extension, du document Word, OpenDocument ou RTF dont le texte affiché
 // a été importé : il est proposé au premier enregistrement.
 let importName: string | undefined;
 
@@ -2118,7 +2119,7 @@ const fileStatus = document.querySelector<HTMLSpanElement>("#export-status")!;
 
 const TEXT_FILTERS = [{ name: "Texte Markdown", extensions: ["md", "txt"] }];
 const FOUNTAIN_FILTERS = [{ name: "Scénario Fountain", extensions: ["fountain", "txt"] }];
-const OPEN_FILTERS = [{ name: "Texte, scénario ou document", extensions: ["md", "txt", "fountain", "odt", "docx"] }];
+const OPEN_FILTERS = [{ name: "Texte, scénario ou document", extensions: ["md", "txt", "fountain", "odt", "docx", "rtf"] }];
 
 function setStatus(message: string, error = false) {
   fileStatus.textContent = error ? `Erreur : ${message}` : message;
@@ -2351,6 +2352,7 @@ const FORMATS: Record<string, string> = {
   pdf: "PDF",
   docx: "Word",
   odt: "OpenDocument",
+  rtf: "RTF",
   epub: "EPUB",
   md: "Markdown",
   txt: "Texte brut",
@@ -2385,13 +2387,14 @@ function chosenPlayExport(): { layout: PlayLayout; page: PlayPage } {
 
 btnExport.addEventListener("click", () => {
   // Un scénario s'exporte en PDF et en Fountain ; les autres formats de
-  // texte, dans tous les formats d'export sauf ceux du scénario.
+  // texte, dans tous les formats d'export sauf ceux du scénario. Une pièce
+  // ne s'exporte ni en EPUB ni en RTF.
   const scenario = currentFormat === "scenario";
   const theatre = currentFormat === "theatre";
   let first: HTMLInputElement | undefined;
   for (const radio of exportDialog.querySelectorAll<HTMLInputElement>('input[name="format"]')) {
     const forScenario = radio.value === "fountain" || radio.value === "fdx";
-    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario) || (theatre && radio.value === "epub");
+    radio.disabled = radio.value === "fdx" || (radio.value !== "pdf" && forScenario !== scenario) || (theatre && (radio.value === "epub" || radio.value === "rtf"));
     radio.parentElement!.classList.toggle("disabled", radio.disabled);
     if (!radio.disabled) first ??= radio;
   }
@@ -2484,10 +2487,16 @@ exportDialog.addEventListener("close", async () => {
       setStatus(await exportScreenplayPdf(path));
       return;
     }
-    const fountain = format === "fountain" ? fountainExport() : undefined;
-    // Un texte vanilla s'exporte avec son interligne et ses marges. Une pièce
-    // en texte brut est écrite telle quelle, comme en Markdown.
+    // Un texte vanilla s'exporte avec son interligne et ses marges.
     const layout = currentFormat === "vanilla" ? currentSetup : null;
+    // Le RTF est écrit par l'app elle-même : il ne demande pas Pandoc.
+    if (format === "rtf") {
+      await invoke("write_text_file", { path, contents: markdownToRtf(view.state.doc.toString(), layout) });
+      setStatus(`Exporté en ${((performance.now() - start) / 1000).toFixed(1)} s : ${path}`);
+      return;
+    }
+    const fountain = format === "fountain" ? fountainExport() : undefined;
+    // Une pièce en texte brut est écrite telle quelle, comme en Markdown.
     const route = currentFormat === "theatre" ? "md" : format;
     await invoke("export_document", { path, format: route, markdown: fountain?.text ?? view.state.doc.toString(), layout });
     const seconds = ((performance.now() - start) / 1000).toFixed(1);

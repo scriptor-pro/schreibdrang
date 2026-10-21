@@ -317,7 +317,7 @@ fn export(path: &Path, format: &str, markdown: &str, layout: Option<Layout>) -> 
 // paragraphes qu'elles laissent vides.
 const IMPORT_FILTER: &str = "function Image() return {} end\nfunction Para(el) if #el.content == 0 then return {} end end\n";
 
-/// Convertit un document Word (.docx) ou OpenDocument (.odt) en Markdown : les
+/// Convertit un document Word (.docx), OpenDocument (.odt) ou RTF (.rtf) en Markdown : les
 /// titres, l'italique, le gras et les notes sont gardés ; la mise en forme
 /// propre au traitement de texte est abandonnée. Le document n'est pas modifié.
 fn import(path: &Path) -> Result<String, String> {
@@ -1259,6 +1259,22 @@ mod tests {
             assert!(!text.contains("image") && !text.contains('{') && !text.contains('<'), "{extension} : {text}");
         }
         assert!(import(Path::new("/aucun/fichier.docx")).is_err());
+    }
+
+    // Demande Pandoc : un RTF, écrit comme le font Word et LibreOffice
+    // (« \u233\'e9 » pour « é »), devient du Markdown.
+    #[test]
+    fn un_rtf_importe_garde_ses_accents_et_sa_mise_en_valeur() {
+        let source = r"{\rtf1\ansi\ansicpg1252\uc1{\fonttbl{\f0 Literata;}}
+{\pard\outlinelevel0\b\fs32 Chapitre premier\par}
+{\pard Il \u233\'e9tait une fois {\i Lucien} et {\b \u201\'c9lise}, le 1{\super er} jour.\par}
+}
+";
+        let path = std::env::temp_dir().join("schreibdrang-test-import.rtf");
+        fs::write(&path, source).expect("le document d'essai est écrit");
+        let text = import(&path).expect("le document est importé");
+        assert!(text.contains("Il était une fois *Lucien* et **Élise**"), "{text}");
+        assert!(text.contains("1^er^ jour"), "{text}");
     }
 
     const LAYOUT: Layout = Layout { spacing: 1.5, top: 2.0, bottom: 3.0, left: 2.5, right: 1.2 };

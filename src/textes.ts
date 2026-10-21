@@ -16,7 +16,7 @@ const KEY = "schreibdrang.textes";
 // texte que l'app lit tel quel, ou un document à convertir.
 export function fileKind(path: string): "fountain" | "texte" | "import" {
   if (/\.fountain$/i.test(path)) return "fountain";
-  return /\.(odt|docx)$/i.test(path) ? "import" : "texte";
+  return /\.(odt|docx|rtf)$/i.test(path) ? "import" : "texte";
 }
 
 // Nom proposé pour enregistrer un document importé : le sien, sans extension.
