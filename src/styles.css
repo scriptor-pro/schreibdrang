@@ -516,8 +516,10 @@ section[hidden] {
   margin: 0.25rem 0;
 }
 
-/* Proposition de fiche, dans le pied de page : discrète, sans couleur. */
+/* Proposition de fiche, dans le pied de page : en outremer, pour qu'on la
+   remarque loin du texte, sans fenêtre ni bulle. */
 #people-proposal {
+  color: var(--accent);
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -532,7 +534,7 @@ section[hidden] {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--accent);
   font: inherit;
   font-weight: 700;
   text-decoration: underline;
