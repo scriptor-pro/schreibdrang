@@ -1289,3 +1289,28 @@ dialog .word-list li.empty {
   --error: #FF8A80;
   --cork: #4A3826;
 }
+
+/* Proposition de remplacer un nom changé dans le texte, sous les noms de la
+   fiche : en outremer, comme les propositions de fiche. */
+.people-rename {
+  color: var(--accent);
+}
+
+.people-rename[hidden] {
+  display: none;
+}
+
+.people-rename p {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.people-inline {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}

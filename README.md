@@ -8,7 +8,7 @@ Ce dépôt contient le **prototype** : une version de travail qui sert à valide
 
 ## État du prototype
 
-Version 0.0.42, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
+Version 0.0.43, testée uniquement sous Debian 12 (XFCE, X11). Des paquets pour Windows et macOS sont publiés, mais ils n'ont pas encore été essayés sur ces systèmes.
 
 Ce qui fonctionne :
 
@@ -26,7 +26,7 @@ Ce qui fonctionne :
 - **Chercher et remplacer** dans le texte, avec respect de la casse, mot entier et expression régulière.
 - **Page de couverture d'un scénario**, en PDF : titre, un ou plusieurs auteurs avec leurs coordonnées, agent en option.
 - **Correction** par Grammalecte, sur l'ordinateur et sans connexion : Correction > Vérifier (F7) relit la sélection ou tout le texte, en commençant par le passage affiché ; en option, le paragraphe en cours est relu pendant la frappe. Les remarques de grammaire, d'orthographe et de typographie sont soulignées en outremer, et une bulle propose les suggestions, Ignorer, Ignorer cette règle et l'ajout au dictionnaire du texte ou au dictionnaire personnel. F8 et Maj+F8 passent d'une remarque à l'autre. Correction > Utiliser l'apostrophe typographique remplace en une fois toutes les apostrophes droites du texte. Correction > Mettre en forme les nombres ordinaux écrit « 1er », « XIXe » en « 1ᵉʳ », « XIXᵉ », que les exports mettent en exposant.
-- **Fiches personnage**, dans tous les formats sauf page blanche : un panneau à droite du texte, ouvert par Personnages > Liste des personnages (Ctrl+Maj+P) ou par un double-clic sur un nom. Les prénoms, noms et surnoms des fiches sont soulignés en pointillé dans le texte ; ils sont proposés pendant la frappe (Tab pour accepter) et acceptés par la correction. En roman et en nouvelle, un nom qui revient trois fois sans fiche est proposé dans le pied de page ; au théâtre et au scénario, chaque personnage qui parle sans fiche. Au théâtre, la liste en tête de pièce est tenue à jour à partir des fiches, le personnage qui parle le plus en premier, et une liste écrite à la main peut devenir des fiches. Au théâtre et au scénario, la fiche montre toutes les répliques du personnage.
+- **Fiches personnage**, dans tous les formats sauf page blanche : un panneau à droite du texte, ouvert par Personnages > Liste des personnages (Ctrl+Maj+P) ou par un double-clic sur un nom. Les prénoms, noms et surnoms des fiches sont soulignés en pointillé dans le texte ; ils sont proposés pendant la frappe (Tab pour accepter) et acceptés par la correction. En roman et en nouvelle, un nom qui revient trois fois sans fiche est proposé dans le pied de page ; au théâtre et au scénario, chaque personnage qui parle sans fiche. Au théâtre, la liste en tête de pièce est tenue à jour à partir des fiches, le personnage qui parle le plus en premier, et une liste écrite à la main peut devenir des fiches. Au théâtre et au scénario, la fiche montre toutes les répliques du personnage. Quand on change un prénom, un nom ou un surnom, la fiche propose de le remplacer dans tout le texte, en une seule modification que Ctrl+Z annule.
 - **Paramètres** : thème clair ou sombre, police et taille du texte, apostrophe typographique (’) et espaces insécables à la frappe (avant ; ! ? : », après « et dans l'heure : 15 h 35), activées par défaut, écran affiché au lancement.
 - **Plein écran**, barre de menu native, fenêtre « À propos ».
 

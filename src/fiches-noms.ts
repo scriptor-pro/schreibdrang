@@ -6,7 +6,7 @@
 // en capitales ; dans ce dernier cas seulement, les accents ne comptent pas
 // (« ELISE » est Élise). « marie », le verbe, n'est donc pas Marie.
 
-import { sheetNames } from "./fiches.ts";
+import { emptySheet, sheetNames } from "./fiches.ts";
 import type { Sheet } from "./fiches.ts";
 
 export interface NameHit {
@@ -160,4 +160,97 @@ export function completionsFor(prefix: string, sheets: Sheet[]): NameCompletion[
   return [...byLabel]
     .map(([label, ids]) => ({ label, ids }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+
+// ---------------------------------------------------------------------------
+// Renommer un personnage dans le texte
+// ---------------------------------------------------------------------------
+
+export interface TextChange {
+  from: number;
+  to: number;
+  insert: string;
+}
+
+export interface RenamePlan {
+  changes: TextChange[];
+  // Vrai si une autre fiche porte aussi l'ancien nom : on ne peut pas savoir
+  // quelles occurrences sont celles du personnage renommé, et rien n'est prévu.
+  shared: boolean;
+}
+
+const RENAMED = "\u0000renomme";
+// Un mot qui commence par une voyelle ou un h prend l'élision : « d’Antoine ».
+const elides = (name: string) => /^[AEIOUYH]/.test(fold(name.trim()));
+const ELIDED = /(?<![\p{L}\p{M}])(d|qu)(['’])$/iu;
+const FULL = /(?<![\p{L}\p{M}])(de|que)[  ]$/iu;
+
+// Écrit le nouveau nom sous la même forme que l'ancien dans le texte : tel
+// quel, avec une capitale initiale (début de phrase), ou tout en capitales.
+function sameForm(written: string, oldName: string, newName: string): string {
+  if (written === oldName) return newName;
+  if (isAllCaps(written)) return newName.toUpperCase();
+  if (written === capitalized(oldName)) return capitalized(newName);
+  return newName;
+}
+
+// « de » ou « que », écrits comme le mot élidé qu'ils remplacent, ou l'inverse.
+function sameCase(written: string, word: string, caps: boolean): string {
+  if (written === written.toLowerCase()) return word;
+  if (caps && (written.length === 1 || written === written.toUpperCase())) return word.toUpperCase();
+  return capitalized(word);
+}
+
+// Les remplacements à faire dans le texte pour que l'ancien nom devienne le
+// nouveau. `others` : les autres fiches, pour ne pas toucher à leurs noms
+// (« Antoine Petit » reste entier quand on renomme Antoine). `skip` : une
+// partie du texte à laisser (la liste en tête de pièce tenue par l'app).
+export function planRename(
+  text: string,
+  oldName: string,
+  newName: string,
+  others: Sheet[],
+  apostrophe = "’",
+  skip?: { from: number; to: number },
+): RenamePlan {
+  const from = oldName.trim();
+  const to = newName.trim();
+  if (!from || !to || from === to) return { changes: [], shared: false };
+  const pseudo = { ...emptySheet(RENAMED, 0), nickname: from };
+  const hits = findNames(text, [...others, pseudo]).filter((hit) => hit.ids.includes(RENAMED));
+  if (hits.some((hit) => hit.ids.length > 1)) return { changes: [], shared: true };
+  const changes: TextChange[] = [];
+  for (const hit of hits) {
+    if (skip && hit.from <= skip.to && hit.to >= skip.from) continue;
+    const written = text.slice(hit.from, hit.to);
+    const caps = isAllCaps(written);
+    let start = hit.from;
+    let insert = sameForm(written, from, to);
+    const before = text.slice(Math.max(0, hit.from - 4), hit.from);
+    const elided = ELIDED.exec(before);
+    const full = FULL.exec(before);
+    if (elided && !elides(to)) {
+      const word = elided[1].toLowerCase() === "d" ? "de" : "que";
+      start = hit.from - elided[0].length;
+      insert = `${sameCase(elided[1], word, caps)} ${insert}`;
+    } else if (full && elides(to)) {
+      const word = full[1].toLowerCase() === "de" ? "d" : "qu";
+      start = hit.from - full[0].length;
+      insert = `${sameCase(full[1], word, caps)}${apostrophe}${insert}`;
+    }
+    changes.push({ from: start, to: hit.to, insert });
+  }
+  return { changes, shared: false };
+}
+
+// Applique des remplacements rangés dans l'ordre du texte (pour les tests, et
+// pour qui n'a pas CodeMirror sous la main).
+export function applyRename(text: string, changes: TextChange[]): string {
+  let out = "";
+  let at = 0;
+  for (const change of changes) {
+    out += text.slice(at, change.from) + change.insert;
+    at = change.to;
+  }
+  return out + text.slice(at);
 }

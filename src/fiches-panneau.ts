@@ -24,6 +24,11 @@ export interface PanelHost {
   // Vrai si le texte n'a encore jamais été enregistré.
   untitled(): boolean;
   goTo(pos: number): void;
+  // Renommer dans le texte : combien de fois l'ancien nom y serait remplacé,
+  // et s'il est aussi porté par une autre fiche (rien n'est alors proposé).
+  renamePlan(sheet: Sheet, oldName: string, newName: string): { count: number; shared: boolean };
+  // Fait le remplacement, en une seule modification du texte ; rend le nombre.
+  rename(sheet: Sheet, oldName: string, newName: string): number;
   // La fiche affichée change (undefined : aucune), pour surligner ses noms.
   shown(id: string | undefined): void;
   closed(): void;
@@ -51,6 +56,7 @@ const IMPORTANCES: [Importance, string][] = [
 
 // Ce qui compose une ligne de la liste en tête de pièce.
 const CAST_FIELDS = new Set<FieldKey>(["firstName", "lastName", "nickname", "castLine"]);
+const NAME_FIELDS = new Set<FieldKey>(["firstName", "lastName", "nickname"]);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -76,6 +82,11 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
   // Les figurants dont on a demandé toute la fiche.
   const expanded = new Set<string>();
   let fieldCount = 0;
+  // Renommage : pour chaque champ de nom changé, le nom encore écrit dans le
+  // texte ; et le compte rendu du dernier remplacement. Propres à une fiche.
+  let renameSheet: string | undefined;
+  const renamed = new Map<FieldKey, string>();
+  let renameDone = "";
 
   const file = () => host.file();
 
@@ -135,10 +146,75 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     });
     // La liste en tête de pièce n'est refaite qu'en quittant le champ.
     if (CAST_FIELDS.has(key)) input.addEventListener("change", () => commit(sheet, true));
+    if (NAME_FIELDS.has(key)) {
+      // En quittant un nom changé, l'app propose de le remplacer dans le
+      // texte. L'ancien nom reste celui du texte tant qu'on n'a pas répondu.
+      input.dataset.key = key;
+      let atFocus = "";
+      input.addEventListener("focus", () => (atFocus = input.value.trim()));
+      input.addEventListener("change", () => {
+        const origin = renamed.get(key) ?? atFocus;
+        const now = input.value.trim();
+        if (!origin || !now || origin === now) renamed.delete(key);
+        else renamed.set(key, origin);
+        renameDone = "";
+        fillRename(sheet);
+      });
+    }
     return el("div", { class: "people-field" }, el("label", { for: id }, label), input);
   }
 
   const warning = el("p", { class: "people-warning", role: "alert" }, "Il faut au moins un prénom, un nom ou un surnom.");
+
+  // La proposition de remplacer un ancien nom dans le texte, sous les noms.
+  function fillRename(sheet: Sheet) {
+    const box = root.querySelector<HTMLElement>(".people-rename");
+    if (!box) return;
+    box.replaceChildren();
+    if (renameDone) box.append(el("p", {}, renameDone));
+    for (const [key, origin] of renamed) {
+      const now = sheet[key].trim();
+      const plan = host.renamePlan(sheet, origin, now);
+      if (plan.shared) {
+        box.append(
+          el("p", {}, `“${origin}” est aussi le nom d’une autre fiche : le texte n’est pas modifié. `, button("Fermer", () => {
+            renamed.delete(key);
+            fillRename(sheet);
+            focusField(key);
+          }, "people-inline")),
+        );
+      } else if (plan.count === 0) {
+        renamed.delete(key);
+      } else {
+        const times = plan.count === 1 ? "1 fois" : `${plan.count} fois`;
+        box.append(
+          el(
+            "p",
+            {},
+            `Remplacer “${origin}” par “${now}” dans le texte (${times}) · `,
+            button("Remplacer", () => {
+              const count = host.rename(sheet, origin, now);
+              renamed.delete(key);
+              renameDone = `“${origin}” remplacé par “${now}” ${count === 1 ? "1 fois" : `${count} fois`}. Ctrl+Z dans le texte pour annuler.`;
+              fillRename(sheet);
+              focusField(key);
+            }, "people-inline"),
+            " · ",
+            button("Garder", () => {
+              renamed.delete(key);
+              fillRename(sheet);
+              focusField(key);
+            }, "people-inline"),
+          ),
+        );
+      }
+    }
+    box.hidden = box.childElementCount === 0;
+  }
+
+  function focusField(key: FieldKey) {
+    root.querySelector<HTMLElement>(`[data-key="${key}"]`)?.focus();
+  }
 
   function block(title: string, ...children: Node[]): HTMLElement {
     return el("section", { class: "people-block" }, el("h3", {}, title), ...children);
@@ -317,6 +393,11 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
 
   function renderSheet(sheet: Sheet, focus: boolean) {
     fieldCount = 0;
+    if (renameSheet !== sheet.id) {
+      renameSheet = sheet.id;
+      renamed.clear();
+      renameDone = "";
+    }
     const full = isFullSheet(sheet) || expanded.has(sheet.id);
     warning.hidden = isValidSheet(sheet);
     const nodes: Node[] = [
@@ -327,6 +408,7 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
         textField(sheet, "firstName", "Prénom"),
         textField(sheet, "lastName", "Nom"),
         textField(sheet, "nickname", "Surnom"),
+        el("div", { class: "people-rename", "aria-live": "polite", hidden: "" }),
         importanceField(sheet),
         functionsField(sheet),
         textField(sheet, "summary", "Résumé en une phrase"),
@@ -371,6 +453,7 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
     if (sheet !== draft) end.append(button("Supprimer la fiche", () => confirmDelete(sheet)));
     nodes.push(end);
     render(nodes);
+    fillRename(sheet);
     host.shown(sheet === draft ? undefined : sheet.id);
     if (focus) root.querySelector<HTMLInputElement>("input")?.focus();
   }
@@ -455,6 +538,9 @@ export function createPanel(root: HTMLElement, host: PanelHost): Panel {
       root.hidden = true;
       root.replaceChildren();
       draft = undefined;
+      renameSheet = undefined;
+      renamed.clear();
+      renameDone = "";
       host.shown(undefined);
       host.closed();
     },

@@ -9,7 +9,7 @@ import type { DecorationSet, LayerMarker, ViewUpdate } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { redo, selectAll, undo } from "@codemirror/commands";
+import { isolateHistory, redo, selectAll, undo } from "@codemirror/commands";
 import { closeSearchPanel, findNext, findPrevious, openSearchPanel } from "@codemirror/search";
 import type Sortable from "sortablejs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -72,7 +72,7 @@ import {
 import type { TextData } from "./correction/dictionnaires";
 import { emptySheetsFile, newSheetId, normalizeSheetsFile, serializeSheets, sheetNames, sidecarPath } from "./fiches";
 import type { Sheet, SheetsFile } from "./fiches";
-import { fold } from "./fiches-noms";
+import { fold, planRename } from "./fiches-noms";
 import { PROPOSAL_THRESHOLD, isGroup, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
 import type { Candidate, Reply, Speaker } from "./fiches-detection";
 import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatre";
@@ -1313,6 +1313,17 @@ const panel = createPanel(peopleRoot, {
     return saved;
   },
   untitled: () => currentPath === undefined,
+  renamePlan(sheet, oldName, newName) {
+    const plan = renameIn(sheet, oldName, newName);
+    return { count: plan.changes.length, shared: plan.shared };
+  },
+  rename(sheet, oldName, newName) {
+    const plan = renameIn(sheet, oldName, newName);
+    if (plan.shared || plan.changes.length === 0) return 0;
+    // Une seule modification, à part dans l'historique : un Ctrl+Z l'annule entière.
+    view.dispatch({ changes: plan.changes, userEvent: "input.rename", annotations: isolateHistory.of("full") });
+    return plan.changes.length;
+  },
   goTo(pos) {
     view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
     view.focus();
@@ -1323,6 +1334,14 @@ const panel = createPanel(peopleRoot, {
   },
   closed: () => view.focus(),
 });
+
+// Les remplacements qui feraient d'un ancien nom de la fiche le nouveau, dans
+// tout le texte, sauf la liste en tête de pièce tenue par l'app (refaite
+// avec les fiches).
+function renameIn(sheet: Sheet, oldName: string, newName: string) {
+  const others = currentFiches.personnages.filter((s) => s.id !== sheet.id);
+  return planRename(view.state.doc.toString(), oldName, newName, others, settings.apostrophe ? "’" : "'", protectedRange());
+}
 
 // Les personnages qui parlent, gardés tant que le texte ne change pas : la
 // liste sert à chaque changement de ligne du curseur.
