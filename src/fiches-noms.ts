@@ -203,15 +203,16 @@ function sameCase(written: string, word: string, caps: boolean): string {
 
 // Les remplacements à faire dans le texte pour que l'ancien nom devienne le
 // nouveau. `others` : les autres fiches, pour ne pas toucher à leurs noms
-// (« Antoine Petit » reste entier quand on renomme Antoine). `skip` : une
-// partie du texte à laisser (la liste en tête de pièce tenue par l'app).
+// (« Antoine Petit » reste entier quand on renomme Antoine). `skip` : les
+// parties du texte à laisser (la liste en tête de pièce tenue par l'app, le
+// titre « PERSONNAGES »).
 export function planRename(
   text: string,
   oldName: string,
   newName: string,
   others: Sheet[],
   apostrophe = "’",
-  skip?: { from: number; to: number },
+  skip: { from: number; to: number }[] = [],
 ): RenamePlan {
   const from = oldName.trim();
   const to = newName.trim();
@@ -221,7 +222,7 @@ export function planRename(
   if (hits.some((hit) => hit.ids.length > 1)) return { changes: [], shared: true };
   const changes: TextChange[] = [];
   for (const hit of hits) {
-    if (skip && hit.from <= skip.to && hit.to >= skip.from) continue;
+    if (skip.some((part) => hit.from <= part.to && hit.to >= part.from)) continue;
     const written = text.slice(hit.from, hit.to);
     const caps = isAllCaps(written);
     let start = hit.from;

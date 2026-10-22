@@ -207,3 +207,37 @@ export function sheetFromLabel(label: string, id: string, created: number): Shee
   }
   return sheet;
 }
+
+// Le titre « PERSONNAGES » d'une pièce, que le renommage d'une fiche ne doit
+// jamais toucher, même si une fiche porte ce nom par erreur.
+export function castTitleRanges(text: string, format: string): { from: number; to: number }[] {
+  if (format !== "theatre") return [];
+  const lines = text.split("\n");
+  const kinds = classifyPlay(lines);
+  const ranges: { from: number; to: number }[] = [];
+  let offset = 0;
+  lines.forEach((line, i) => {
+    if (kinds[i] === "cast-title") ranges.push({ from: offset, to: offset + line.length });
+    offset += line.length + 1;
+  });
+  return ranges;
+}
+
+// Personnages > Nouveau personnage préremplit la fiche avec le mot sous le
+// curseur seulement s'il peut être un nom : une majuscule initiale, et pas
+// sur un titre (chapitre, acte, scène, « PERSONNAGES », intitulé ou
+// transition d'un scénario).
+export function prefillAllowed(lines: string[], index: number, word: string, format: string): boolean {
+  if (!/^\p{Lu}/u.test(word)) return false;
+  const line = lines[index] ?? "";
+  if (line.trim().startsWith("#")) return false;
+  if (format === "theatre") {
+    const kind = classifyPlay(lines)[index];
+    return kind !== "cast-title" && kind !== "act" && kind !== "scene";
+  }
+  if (format === "scenario") {
+    const kind = classifyLines(lines)[index];
+    return kind !== "scene" && kind !== "transition";
+  }
+  return true;
+}

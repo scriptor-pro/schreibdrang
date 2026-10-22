@@ -73,7 +73,7 @@ import type { TextData } from "./correction/dictionnaires";
 import { emptySheetsFile, newSheetId, normalizeSheetsFile, serializeSheets, sheetNames, sidecarPath } from "./fiches";
 import type { Sheet, SheetsFile } from "./fiches";
 import { fold, planRename } from "./fiches-noms";
-import { PROPOSAL_THRESHOLD, isGroup, isSentenceStart, mayBeCharacter, occurrences, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
+import { PROPOSAL_THRESHOLD, castTitleRanges, isGroup, isSentenceStart, mayBeCharacter, occurrences, prefillAllowed, sheetFromLabel, speakerSheet, speakers } from "./fiches-detection";
 import type { Candidate, Reply, Speaker } from "./fiches-detection";
 import { castChange, firstHeading, importCast, parseCast } from "./fiches-theatre";
 import { activeSheet, castRewrite, nameAtCursor, peopleExtension, refreshNames } from "./fiches-editeur";
@@ -1340,7 +1340,11 @@ const panel = createPanel(peopleRoot, {
 // avec les fiches).
 function renameIn(sheet: Sheet, oldName: string, newName: string) {
   const others = currentFiches.personnages.filter((s) => s.id !== sheet.id);
-  return planRename(view.state.doc.toString(), oldName, newName, others, settings.apostrophe ? "’" : "'", protectedRange());
+  const text = view.state.doc.toString();
+  const skip = castTitleRanges(text, currentFormat);
+  const managed = protectedRange();
+  if (managed) skip.push(managed);
+  return planRename(text, oldName, newName, others, settings.apostrophe ? "’" : "'", skip);
 }
 
 // Les personnages qui parlent, gardés tant que le texte ne change pas : la
@@ -1695,7 +1699,11 @@ function wordForNewSheet(): string | undefined {
     return selected && !selected.includes("\n") ? selected : undefined;
   }
   const range = view.state.wordAt(head);
-  return range ? view.state.sliceDoc(range.from, range.to) : undefined;
+  if (!range) return undefined;
+  const word = view.state.sliceDoc(range.from, range.to);
+  const lines = view.state.doc.toString().split("\n");
+  const index = view.state.doc.lineAt(head).number - 1;
+  return prefillAllowed(lines, index, word, currentFormat) ? word : undefined;
 }
 
 const PEOPLE_ACTIONS: Record<string, () => void> = {
